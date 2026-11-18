@@ -1,8 +1,8 @@
 """Step 7: meal log and the user's usual portions. Coordinates are never stored; a meal's photo is
 kept beside the diary (photos.py) and deleted with the meal.
 
-Every row belongs to one user: an account id from the web app, or '' for the local user
-(the CLI, or the web app with sign-in turned off). A Diary only sees its own user's rows.
+Rows carry a user_id column from when the web app had accounts; this diary is the local user's,
+'', and rows that belonged to an account are left as they were and never read.
 """
 
 from __future__ import annotations
@@ -37,11 +37,13 @@ CREATE TABLE IF NOT EXISTS usual_portions (
 _MEALS_INDEX = "CREATE INDEX IF NOT EXISTS meals_by_user_date ON meals (user_id, local_date, taken_at);"
 
 
+LOCAL_USER = ""
+
+
 class Diary:
-    def __init__(self, path: Path, user_id: str | None = None) -> None:
-        """`user_id` None means the local user."""
+    def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._user = user_id or ""
+        self._user = LOCAL_USER
         self._con = sqlite3.connect(path)
         self._con.executescript(_MEALS + _USUAL_PORTIONS)
         _migrate(self._con)

@@ -1,10 +1,9 @@
 """Meal photos, kept with the diary so the app can show them, and deleted with their meals.
 
-A logged meal's photo is stored as two JPEGs in `photos/<owner key>/` under the data folder:
+A logged meal's photo is stored as two JPEGs in `photos/local/` under the data folder:
 `<meal id>.jpg`, 1280 px on the long edge, and `<meal id>-thumb.jpg`, 320 px. They are re-encoded
 from the pixels alone: upright, converted to sRGB, and without EXIF (so no GPS or camera details),
-XMP, comments or color profile. The owner key is a short hash of the account id ("local" for the
-local user), so folder names don't show account ids. The upload as sent is never written to disk.
+XMP, comments or color profile. The upload as sent is never written to disk.
 """
 
 from __future__ import annotations
@@ -34,11 +33,6 @@ _SRGB = ImageCms.createProfile("sRGB")
 log = logging.getLogger(__name__)
 
 
-def owner_key(owner: str | None) -> str:
-    """The folder name for `owner`: an account id's hash, or "local" for the local user (None)."""
-    return "local" if owner is None else hashlib.sha256(owner.encode()).hexdigest()[:16]
-
-
 def encode(photo: bytes) -> tuple[bytes, bytes]:
     """The full-size and thumbnail JPEGs of `photo`: upright, in sRGB, and carrying no metadata."""
     with Image.open(io.BytesIO(photo)) as img:
@@ -51,38 +45,38 @@ def encode(photo: bytes) -> tuple[bytes, bytes]:
 
 
 class PhotoStore:
-    """The photos of every user's meals under `root`, one folder per user."""
+    """The photos of the diary's meals, in `root`/local (the folder name dates from accounts)."""
 
     def __init__(self, root: Path) -> None:
-        self.root = root
+        self.folder = root / "local"
 
-    def path(self, owner: str | None, meal_id: int, *, thumb: bool = False) -> Path:
-        return self.root / owner_key(owner) / f"{meal_id}{'-thumb' if thumb else ''}.jpg"
+    def path(self, meal_id: int, *, thumb: bool = False) -> Path:
+        return self.folder / f"{meal_id}{'-thumb' if thumb else ''}.jpg"
 
-    def save(self, owner: str | None, meal_id: int, photo: bytes) -> str | None:
-        """Store the photo of `owner`'s meal `meal_id`. Returns its version, a short hash of the
-        stored JPEG, or None when it couldn't be stored: that is logged and never fails the meal."""
+    def save(self, meal_id: int, photo: bytes) -> str | None:
+        """Store the photo of meal `meal_id`. Returns its version, a short hash of the stored JPEG,
+        or None when it couldn't be stored: that is logged and never fails the meal."""
         try:
             full, thumb = encode(photo)
-            self.path(owner, meal_id).parent.mkdir(parents=True, exist_ok=True)
-            _write(self.path(owner, meal_id), full)
-            _write(self.path(owner, meal_id, thumb=True), thumb)
+            self.folder.mkdir(parents=True, exist_ok=True)
+            _write(self.path(meal_id), full)
+            _write(self.path(meal_id, thumb=True), thumb)
         except Exception as exc:
             log.warning("Couldn't store the photo of meal #%d: %s: %s", meal_id, type(exc).__name__, exc)
             with suppress(OSError):  # no half-stored photo, nor one left from an older meal with this id
-                self.delete(owner, meal_id)
+                self.delete(meal_id)
             return None
         return hashlib.sha256(full).hexdigest()[:12]
 
-    def delete(self, owner: str | None, meal_id: int) -> None:
-        """Delete the photo of `owner`'s meal `meal_id`, if there is one."""
+    def delete(self, meal_id: int) -> None:
+        """Delete the photo of meal `meal_id`, if there is one."""
         for thumb in (False, True):
-            self.path(owner, meal_id, thumb=thumb).unlink(missing_ok=True)
+            self.path(meal_id, thumb=thumb).unlink(missing_ok=True)
 
-    def clear(self, owner: str | None) -> None:
-        """Delete the photos of all of `owner`'s meals."""
+    def clear(self) -> None:
+        """Delete the photos of all the meals."""
         with suppress(FileNotFoundError):
-            shutil.rmtree(self.root / owner_key(owner))
+            shutil.rmtree(self.folder)
 
 
 def _srgb(img: Image.Image) -> Image.Image:

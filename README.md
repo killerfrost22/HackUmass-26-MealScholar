@@ -8,13 +8,12 @@
 
 **Study your plate. Be a MealScholar.**
 
-A HackUMass XIV project, piloting at UMass.
+A HackUMass XIV project.
 
 <p>
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&amp;logoColor=white">
   <img alt="Google Gemini" src="https://img.shields.io/badge/Gemini-8E75B2?logo=googlegemini&amp;logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&amp;logoColor=white">
-  <img alt="MongoDB Atlas" src="https://img.shields.io/badge/MongoDB_Atlas-47A248?logo=mongodb&amp;logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-003B57?logo=sqlite&amp;logoColor=white">
   <img alt="HTML5" src="https://img.shields.io/badge/HTML5-E34F26?logo=html5&amp;logoColor=white">
   <img alt="CSS" src="https://img.shields.io/badge/CSS-663399?logo=css&amp;logoColor=white">
@@ -29,13 +28,13 @@ A HackUMass XIV project, piloting at UMass.
 
 ---
 
-MealScholar is a photo-based food diary built for students, piloting at UMass.
-Gemini identifies foods and estimates their portions; campus dining labels and USDA FoodData Central
-supply the nutrition facts. Review the sources, correct a match and log your meal.
+MealScholar is a photo-based food diary built for students.
+Gemini identifies foods and estimates their portions; USDA FoodData Central supplies the nutrition
+facts. Review the matches, correct one and log your meal.
 
 > [!IMPORTANT]
-> **The AI never invents nutrient numbers.** Nutrients come from campus labels or USDA FoodData
-> Central and arithmetic, not from the model.
+> **The AI never invents nutrient numbers.** Nutrients come from USDA FoodData Central and
+> arithmetic, not from the model.
 
 <p align="center">
   <a href="https://app.mealscholar.health">
@@ -51,23 +50,15 @@ supply the nutrition facts. Review the sources, correct a match and log your mea
 |---|---|
 | **Photo analysis** | JPEG, PNG and HEIC uploads up to 25 MB and 50 megapixels; foods and portion estimates with boxes on the photo. |
 | **Estimates, ranges on request** | One likely number per amount by default. Turn on Show ranges (asked once in onboarding, a switch in Settings) to see low, likely and high for portions and nutrients. At most one clarifying question. |
-| **Check the match** | See where each label came from ("From UMass Dining: Worcester · lunch · Sat, Nov 14"), re-match against another hall or day, or pick another USDA food. |
+| **Check the match** | See which USDA food each item matched, pick another one, or type the exact grams. |
 | **Your food diary** | Meals with retained, metadata-stripped photos; daily calorie/nutrient totals, % Daily Value and weekly views. |
-| **Phone-first app** | Today, Menu and Week views, camera entry points and Add to Home Screen. |
-| **Campus menu first** | Each upload names a dining hall: the one you're at with location on, else the hall picked on Menu, else your main hall. A food that is a listed dish uses the hall's label; the rest use USDA. |
-| **Campus dining APIs** | UMass Dining locations, menus, dish search, nearby halls and favorites alerts. |
+| **Phone-first app** | Today and Week views, camera entry points and Add to Home Screen. |
+| **No sign-in** | One diary per server, stored locally in SQLite. Goals and display settings live beside it. |
 
 ### Current limitations
 
-- **Campus labels need hall context.** The backend uses a campus label only when it receives
-  `location_id`; it does not choose a hall. The browser supplies the nearby commons when location
-  is on, otherwise the Menu-tab choice or main hall, plus local photo time. Candidates include
-  Grab N' Go and can use past dishes on a missing menu day. Unmatched foods and API/CLI calls
-  without a hall fall back to USDA.
-- **Turning off sign-in shares one diary.** `MEALSCHOLAR_AUTH_REQUIRED=0` is for local development:
-  every visitor shares one diary and one set of preferences. The live app requires sign-in.
-- **Email needs a relay.** The default `outbox` provider only queues messages; the `smtp` provider
-  sends them. The app reads `/api/status`'s `email_sending` to decide what to tell users.
+- **One diary per server.** There are no accounts: everyone who can reach the server shares one
+  diary and one set of preferences. Run it for yourself, or keep it on a trusted network.
 
 See [TODO.md](TODO.md) for remaining work.
 
@@ -90,12 +81,9 @@ Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey)
 
 ```dotenv
 GEMINI_API_KEY=your-key-here
-MEALSCHOLAR_AUTH_REQUIRED=0
 ```
 
-`MEALSCHOLAR_AUTH_REQUIRED=0` enables a local, single-user diary without signing in.
-Use it only for local development, not a shared deployment. Shell variables override `.env`,
-and `.env` is gitignored.
+Shell variables override `.env`, and `.env` is gitignored.
 
 **3. Import USDA data and start the app**
 
@@ -118,7 +106,7 @@ uv run mealscholar serve --host 0.0.0.0
 
 Open your computer's LAN address on the same Wi-Fi. Browser geolocation needs HTTPS or
 `localhost`, so the location switch will not work over an ordinary LAN HTTP address.
-Keep this single-user development server on a trusted network.
+Keep this server on a trusted network: anyone who can reach it uses the same diary.
 
 </details>
 
@@ -127,8 +115,7 @@ Keep this single-user development server on a trusted network.
 ```mermaid
 flowchart LR
     Photo(["Photo + context<br/>Location is opt-in"]) --> Vision["Gemini vision<br/>Foods + portions"]
-    Menu[("Campus menu<br/>Hall sent by the app")] --> Vision
-    Vision --> Sources["Matched campus label<br/>USDA otherwise"]
+    Vision --> Sources["USDA FoodData Central<br/>Closest match"]
     Sources --> Math["Nutrient math<br/>Low · likely · high"]
     Math --> Result["Meal result<br/>Likely values + % Daily Value"]
     Result --> Diary(["Food diary<br/>Daily + weekly views"])
@@ -136,9 +123,8 @@ flowchart LR
     Refine --> Sources
 ```
 
-USDA-only foods without a close match are suggestions, not counted foods, until a match is selected.
-Choosing another USDA food recomputes the result without another photo analysis; doing so on a
-campus item switches its nutrient source to USDA.
+Foods without a close USDA match are suggestions, not counted foods, until a match is selected.
+Choosing another USDA food recomputes the result without another photo analysis.
 
 
 ## Command line
@@ -175,8 +161,7 @@ uv run mealscholar fix 3 1 --grams 300
 uv run mealscholar delete 3
 ```
 
-`--json` prints the full `MealResult`. The CLI works with the local diary; signing into the
-web app keeps each account's meals separate.
+`--json` prints the full `MealResult`. The CLI and the web app share the same local diary.
 
 </details>
 
@@ -189,46 +174,17 @@ Set these in `.env` or your shell.
 | `GEMINI_API_KEY` | Not set | Required for photo analysis. |
 | `MEALSCHOLAR_MODEL` | `gemini-4-hydrogen` | Vision model; see [model benchmarks](BENCHMARK.md). |
 | `MEALSCHOLAR_THINKING` | `low` | Thinking level. Gemini 4 supports `low`, `medium`, `high`, `xhigh`; `minimal` is for 3.x Flash/Flash-Lite only. |
-| `MEALSCHOLAR_HOME` | `~/.mealscholar` | USDA database, downloads, SQLite diary and logged meals' photos. |
+| `MEALSCHOLAR_HOME` | `~/.mealscholar` | USDA database, downloads, SQLite diary and preferences, and logged meals' photos. |
 | `MEALSCHOLAR_NOMINATIM_URL` | Public OpenStreetMap Nominatim | Place lookup; the public service allows 1 request/second. |
+| `MEALSCHOLAR_PUBLIC_URL` | `http://127.0.0.1:8000` | Where the app is reached. Its host passes the cross-site write check behind a proxy; an `https://` URL also turns off the interactive API docs. |
 
-<details>
-<summary><strong>Accounts, dining data and deployment settings</strong></summary>
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `MONGODB_URI` | Not set | Persistent accounts/preferences and access to dining data. Without it, accounts/preferences are in memory and dining routes return 503. |
-| `MEALSCHOLAR_MONGODB_DB` | `mealscholar` | Accounts and preferences database. |
-| `MEALSCHOLAR_DINING_DB` | `umass_dining` | Read-only dining-menu database. |
-| `MEALSCHOLAR_AUTH_REQUIRED` | `1` | Require sign-in for meal and diary routes. |
-| `MEALSCHOLAR_PUBLIC_URL` | `http://127.0.0.1:8000` | Public origin for account links and cross-site checks. |
-| `MEALSCHOLAR_COOKIE_SECURE` | `1` | HTTPS-only session cookies. Set to `0` only when testing accounts over local HTTP. |
-| `MEALSCHOLAR_EMAIL_PROVIDER` | `outbox` | `outbox` queues account mail without sending; `smtp` sends through the configured relay. |
-| `MEALSCHOLAR_SMTP_HOST` | Not set | SMTP relay hostname; required with the `smtp` provider. |
-| `MEALSCHOLAR_SMTP_PORT` | `587` | SMTP submission port. The sender uses STARTTLS, not implicit TLS on port 465. |
-| `MEALSCHOLAR_SMTP_USER` | Not set | Relay username, when authentication is required. |
-| `MEALSCHOLAR_SMTP_PASSWORD` | Not set | Relay password; keep it outside version control. |
-| `MEALSCHOLAR_SMTP_STARTTLS` | `1` | Upgrade the SMTP connection with STARTTLS. Disable only for a trusted local relay. |
-| `MEALSCHOLAR_SMTP_TIMEOUT` | `10` | Timeout in seconds for each SMTP socket operation. |
-| `MEALSCHOLAR_EMAIL_FROM` | Not set | From address, optionally `MealScholar <no-reply@example.com>`; required with `smtp`. |
-| `MEALSCHOLAR_DEMO_VERIFY_LINK` | `0` | Demo-only verification links in responses; never enable publicly. |
-| `MEALSCHOLAR_DEV_OUTBOX` | `0` | Development-only outbox endpoint; never enable publicly. |
-
-For production, use persistent accounts, require sign-in and set `MEALSCHOLAR_PUBLIC_URL` to
-`https://app.mealscholar.health`. Keep secure cookies enabled and both development email flags off.
-Configure SMTP and verify delivered confirmation/reset links before relying on email. Favorites
-digests also need an explicit schedule; SMTP configuration alone does not schedule them.
-
-Meals and learned portions live in `MEALSCHOLAR_HOME/diary.sqlite`, and retained photo JPEGs and
-thumbnails in `MEALSCHOLAR_HOME/photos/`. MongoDB stores accounts and preferences. Back up all
-three data sets and verify restoration.
-
-</details>
+Meals, learned portions and preferences live in `MEALSCHOLAR_HOME/diary.sqlite`, and retained photo
+JPEGs and thumbnails in `MEALSCHOLAR_HOME/photos/`. Back up both and verify restoration.
 
 ## Rules the code enforces
 
-- **Data, not guesses:** the model estimates foods and amounts; a matching campus label supplies
-  the main nutrients when the upload names a hall, with USDA as fallback and micronutrient source.
+- **Data, not guesses:** the model estimates foods and amounts; USDA FoodData Central supplies
+  every nutrient.
 - **Ranges are computed; showing them is the user's choice:** photo-based amounts always have
   low/likely/high estimates. The app shows the likely value unless the user turns on Show ranges
   (asked once in onboarding, a switch in Settings); with it on, a range is never collapsed to one
@@ -237,8 +193,7 @@ three data sets and verify restoration.
   the CLI or API can collapse a range.
 - **Photo retention:** logged meal photos are retained as JPEGs up to 1280 px on the long edge
   and thumbnails up to 320 px, re-encoded without EXIF/GPS, XMP, comments or color-profile metadata.
-  The raw upload is not saved. Deleting the meal, history or account removes its server photo copies.
-  Photo access follows account ownership when signed in; local guest mode remains shared.
+  The raw upload is not saved. Deleting the meal, the history or all data removes its server photo copies.
 - **Location is opt-in:** raw coordinates are not retained in the diary. Images sent to Gemini
   are re-encoded without EXIF, and requests use `store=False`; that flag is not a blanket provider
   retention guarantee.
@@ -248,15 +203,13 @@ three data sets and verify restoration.
   is a label reference, not a prescribed goal. No insulin or carb-dosing advice.
 - **Bounded image decoding:** photos over 50 megapixels are refused before their pixels are decoded.
   Web uploads also have a 25 MB encoded-body limit and return 413 with resizing guidance.
-- **Shared model-request budgets:** photo uploads and clarifying answers together allow 30 attempts
-  per signed-in account and 100 per network in a sliding 10-minute window. Guests have the network
-  limit too. IPv6 addresses in one /64 share a network allowance, and forwarded visitor IPs are
-  trusted only from the local tunnel. Refused requests return 429 with `Retry-After` before model work;
-  photo uploads are checked before reading the image body. Admitted attempts count even if the
-  photo is invalid or analysis fails.
-- **Password storage:** new passwords use scrypt with N=2^17, r=8 and p=1. Existing hashes retain
-  their encoded parameters and still verify; password changes/resets use the stronger settings.
-  Hashing remains limited to four concurrent operations, about 128 MiB each (roughly 512 MiB total).
+- **Model-request budget:** photo uploads and clarifying answers together allow 100 attempts per
+  network in a sliding 10-minute window. IPv6 addresses in one /64 share an allowance, and
+  forwarded visitor IPs are trusted only from the local tunnel. Refused requests return 429 with
+  `Retry-After` before model work; photo uploads are checked before reading the image body.
+  Admitted attempts count even if the photo is invalid or analysis fails.
+- **Same-site writes:** requests that change data are refused (403) when their `Origin` names
+  another site.
 
 Request counters are in process memory: they reset on restart and each server process has its own
 allowance. They are not a project-wide spending cap. Configure provider quotas and billing alerts
@@ -274,9 +227,7 @@ Both sites deploy on pushes to `main` through
 plain HTML/CSS/JavaScript, with no build step. Coordinate deploy changes through the team board
 as described in [AGENTS.md](AGENTS.md).
 
-The live app requires sign-in. Verification, password-reset and account-deletion links come from
-`no-reply@mealscholar.health` through Resend's SMTP relay (the `smtp` provider). Meals logged
-without an account before sign-in became required don't appear in any account.
+The app has no sign-in, so a public deployment shares one diary with every visitor.
 
 The app sends `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`
 and `X-Frame-Options: DENY` on pages, static files and handled API errors. HTTPS upgrading/HSTS and
@@ -359,8 +310,6 @@ Built for HackUMass XIV by three teammates.
   and SR Legacy data, CC0.
 - **Places:** [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL,
   via Nominatim.
-- **Campus menus:** UMass Dining data in MongoDB Atlas, used by the dining APIs and, for a food
-  that is a listed dish, for its nutrients.
 
 ---
 

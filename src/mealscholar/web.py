@@ -1,19 +1,20 @@
 """Web front end: a JSON API over the workflow, plus the static site in `site/`.
 
-Photos arrive as the raw request body and are read in memory. A logged meal keeps a re-encoded copy
-of its photo without metadata (photos.py), deleted with the meal; the upload itself is never saved.
+One diary, no sign-in: whoever can reach the server uses it. Photos arrive as the raw request body
+and are read in memory. A logged meal keeps a re-encoded copy of its photo without metadata
+(photos.py), deleted with the meal; the upload itself is never saved.
 """
 
 from __future__ import annotations
 
-import datetime as dt
 import io
 import logging
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -24,36 +25,31 @@ from pydantic import BaseModel, Field
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from .auth import (
-    AuthError,
-    AuthService,
-    Client,
-    DiaryOwner,
-    RateLimiter,
-    RequestClient,
-    Rule,
-    install_auth,
-    route_path,
-)
-from .busy import Busy, install_busy, open_busy
 from .config import USER_AGENT, Settings
 from .context import NominatimPlaces, PlaceLookup
 from .diary import Diary
-from .dining import Dining, install_dining, open_dining
 from .insights import HealthScore, health_score, summarize_days
 from .metadata import MAX_PHOTO_PIXELS
 from .nutrients import NUTRIENTS
 from .nutrition import FoodDatabase, FoodDatabaseMissing
 from .photos import PhotoStore
-from .pipeline import BadCorrection, UnknownFood, Workflow, correct
-from .prefs import LOCAL_USER, MAX_LOCATION_ID, PrefsStore, install_prefs, open_prefs_store
+from .pipeline import UnknownFood, Workflow, correct
+from .prefs import PrefsStore, install_prefs
 from .schemas import MealResult, Range
+from .security import (
+    Client,
+    RateLimiter,
+    RequestClient,
+    Rule,
+    SameOriginWrites,
+    hide_coordinates_in_access_log,
+    route_path,
+)
 from .vision import GeminiVision, VisionError, VisionModel
 
 SITE = Path(__file__).parent / "site"
 MAX_PHOTO_BYTES = 25 * 1024 * 1024
-ANALYSIS_PER_USER = Rule("analysis-user", 30, 10 * 60)  # photos and answers together; a demo tries several meals
-ANALYSIS_PER_IP = Rule("analysis-ip", 100, 10 * 60)  # campus Wi-Fi can share one network
+ANALYSIS_PER_IP = Rule("analysis-ip", 100, 10 * 60)  # photos and answers together; one Wi-Fi can share an address
 PHOTO_CACHE = "private, max-age=86400"
 PAGE_TYPES = ("text/html", "application/manifest+json")
 JPEG_REPLY: dict[int | str, dict] = {200: {"content": {"image/jpeg": {}}, "description": "The photo."}}
@@ -64,10 +60,6 @@ log = logging.getLogger(__name__)
 class Status(BaseModel):
     gemini_ready: bool
     food_db_ready: bool
-    auth_required: bool
-    email_provider: str
-    email_sending: bool
-    """Account emails really go out (SMTP, fully set up); otherwise they are only queued."""
 
 
 class NutrientInfo(BaseModel):
@@ -97,24 +89,7 @@ class Answer(BaseModel):
 
 class Correction(BaseModel):
     grams: int | None = Field(default=None, gt=0, le=10_000)
-    servings: float | None = Field(default=None, gt=0, le=50)
-    """How many of the campus dish's listed serving ('1 Slice'); only for an item with a `dish`."""
     fdc_id: int | None = None
-
-
-MealKey = Literal["breakfast", "lunch", "dinner", "late_night", "grab_n_go", "daily_offerings"]
-"""dining.MEALS."""
-
-
-class MenuChoice(BaseModel):
-    """Where and when a logged meal was eaten, as the user says (POST /api/meals/{id}/menu)."""
-
-    location_id: int = Field(ge=1, le=MAX_LOCATION_ID)
-    date: dt.date | None = None
-    """The day of the menu, taken as certain. None: the meal's own time decides, as when it was
-    logged (its EXIF day, or the days around it)."""
-    meal: MealKey | None = None
-    """The meal whose dishes come first; the rest of the day's are still matched."""
 
 
 class Erased(BaseModel):
@@ -130,13 +105,14 @@ class DayView(BaseModel):
     """The day's nutrient-balance score (insights.health_score); None for a day with no meals."""
 
 
-def _limit_analysis(limiter: RateLimiter, owner: str | None, client: Client) -> None:
-    """Photos and clarifying answers share a budget; guests are limited by network."""
-    network = (ANALYSIS_PER_IP, client.network)
-    wait = limiter.hit(network) if owner is None else limiter.hit((ANALYSIS_PER_USER, owner), network)
+def _limit_analysis(limiter: RateLimiter, client: Client) -> None:
+    """Photos and clarifying answers share one budget per network."""
+    wait = limiter.hit((ANALYSIS_PER_IP, client.network))
     if wait is not None:
         unit = "second" if wait == 1 else "seconds"
-        raise AuthError(429, f"Too many analysis requests. Try again in {wait} {unit}.", retry_after=wait)
+        raise HTTPException(
+            429, f"Too many analysis requests. Try again in {wait} {unit}.", headers={"Retry-After": str(wait)}
+        )
 
 
 class _ResponseSecurity:
@@ -170,18 +146,14 @@ def create_app(
     *,
     vision: VisionModel | None = None,
     places: PlaceLookup | None = None,
-    auth: AuthService | None = None,
-    prefs: PrefsStore | None = None,
-    dining: Dining | None = None,
-    busy: Busy | None = None,
+    limiter: RateLimiter | None = None,
 ) -> FastAPI:
-    """`vision` and `places` default to Gemini (when a key is set) and OpenStreetMap Nominatim;
-    `auth` to accounts stored as `settings` say (MongoDB, or memory); `prefs` to the accounts'
-    database; `dining` to the UMass Dining menus when MONGODB_URI is set (else they answer 503)."""
+    """`vision` and `places` default to Gemini (when a key is set) and OpenStreetMap Nominatim."""
     if vision is None and settings.gemini_api_key:
         vision = GeminiVision(settings.gemini_api_key, settings.gemini_model, settings.thinking_level)
     if places is None:
         places = NominatimPlaces(settings.nominatim_url, USER_AGENT)
+    limiter = limiter or RateLimiter()
 
     # The interactive API docs are for local development (an http:// public URL); a public server has none.
     local = settings.public_url.startswith("http://")
@@ -191,27 +163,23 @@ def create_app(
         redoc_url=None,
         openapi_url="/api/openapi.json" if local else None,
     )
-    auth = auth or AuthService.from_settings(settings)
-    install_auth(app, auth)
-    dining = dining or open_dining(settings)
-    install_dining(app, dining)
-    install_busy(app, busy or open_busy(settings), settings.home / "cams")
-    prefs = prefs or open_prefs_store(auth.store)
-    install_prefs(app, prefs, dining)
+    prefs = PrefsStore(settings.diary_db)
+    install_prefs(app, prefs)
+    app.add_middleware(SameOriginWrites, public_host=urlsplit(settings.public_url).netloc)
     app.add_middleware(_ResponseSecurity)
+    hide_coordinates_in_access_log()
     photos = PhotoStore(settings.photos)
 
     # SQLite connections are opened per request: FastAPI runs sync handlers on a thread pool.
-    # `owner` is the signed-in user's id, or None for the local diary (see auth.diary_owner).
     @contextmanager
-    def stores(owner: str | None) -> Iterator[tuple[FoodDatabase, Diary]]:
-        with closing(FoodDatabase(settings.food_db)) as foods, closing(Diary(settings.diary_db, owner)) as diary:
+    def stores() -> Iterator[tuple[FoodDatabase, Diary]]:
+        with closing(FoodDatabase(settings.food_db)) as foods, closing(Diary(settings.diary_db)) as diary:
             yield foods, diary
 
     def workflow(foods: FoodDatabase) -> Workflow:
         if vision is None:
             raise HTTPException(503, "Set GEMINI_API_KEY in .env, then restart `mealscholar serve`.")
-        return Workflow(vision=vision, foods=foods, places=places, menus=dining)
+        return Workflow(vision=vision, foods=foods, places=places)
 
     def logged(diary: Diary, meal_id: int) -> MealResult:
         result = diary.get(meal_id)
@@ -235,17 +203,10 @@ def create_app(
     app.add_exception_handler(FoodDatabaseMissing, error(503, "The food database isn't set up on the server yet."))
     app.add_exception_handler(VisionError, error(502, "Couldn't analyze the photo right now. Try again in a moment."))
     app.add_exception_handler(UnknownFood, error(404))
-    app.add_exception_handler(BadCorrection, error(400))
 
     @app.get("/api/status")
     def status() -> Status:
-        return Status(
-            gemini_ready=vision is not None,
-            food_db_ready=settings.food_db.exists(),
-            auth_required=settings.auth_required,
-            email_provider=settings.email_provider,
-            email_sending=settings.email_sending,
-        )
+        return Status(gemini_ready=vision is not None, food_db_ready=settings.food_db.exists())
 
     @app.get("/api/nutrients")
     def nutrients() -> list[NutrientInfo]:
@@ -257,23 +218,19 @@ def create_app(
     @app.post("/api/meals")
     async def analyze(
         request: Request,
-        owner: DiaryOwner,
         client: RequestClient,
         lat: float | None = None,
         lon: float | None = None,
-        location_id: Annotated[int | None, Query(ge=1, le=MAX_LOCATION_ID)] = None,
         taken_at: datetime | None = None,
     ) -> MealResult:
-        """Body: the photo bytes (JPEG, PNG, HEIC). `lat`/`lon`: device location, opt-in.
-        `location_id`: the dining location whose menu the foods are matched against (from
-        /api/dining/nearest or the user's dining halls); without it nutrients come from USDA only.
-        `taken_at`: the phone's local time at capture with its UTC offset, ISO 8601 such as
-        2026-11-14T12:30:00-05:00 (URL-encode a '+'; an unencoded '+' is read as a space and
-        answers 422). Used only when the photo carries no EXIF time; `context.time_source` is
-        then 'device'. Send local time with its offset, not UTC: a 'Z' or +00:00 time is accepted
-        but the diary files the meal under that clock's date, so an evening meal sent as UTC
-        lands on the next day."""
-        _limit_analysis(auth.limiter, owner, client)
+        """Body: the photo bytes (JPEG, PNG, HEIC). `lat`/`lon`: device location, opt-in, used only
+        to name the food place. `taken_at`: the phone's local time at capture with its UTC offset,
+        ISO 8601 such as 2026-11-14T12:30:00-05:00 (URL-encode a '+'; an unencoded '+' is read as
+        a space and answers 422). Used only when the photo carries no EXIF time;
+        `context.time_source` is then 'device'. Send local time with its offset, not UTC: a 'Z' or
+        +00:00 time is accepted but the diary files the meal under that clock's date, so an evening
+        meal sent as UTC lands on the next day."""
+        _limit_analysis(limiter, client)
         if (lat is None) != (lon is None):
             raise HTTPException(400, "lat and lon go together.")
         if taken_at is not None and taken_at.tzinfo is None:
@@ -286,23 +243,16 @@ def create_app(
         if not photo:
             raise HTTPException(400, "Send the photo as the request body.")
         location = (lat, lon) if lat is not None and lon is not None else None
-        return await run_in_threadpool(_analyze, bytes(photo), location, owner, location_id, taken_at)
+        return await run_in_threadpool(_analyze, bytes(photo), location, taken_at)
 
-    def _analyze(
-        photo: bytes,
-        location: tuple[float, float] | None,
-        owner: str | None,
-        location_id: int | None,
-        taken_at: datetime | None,
-    ) -> MealResult:
-        with stores(owner) as (foods, diary):
+    def _analyze(photo: bytes, location: tuple[float, float] | None, taken_at: datetime | None) -> MealResult:
+        with stores() as (foods, diary):
             try:
                 result = workflow(foods).analyze(
                     io.BytesIO(photo),
                     device_time=taken_at,
                     device_location=location,
                     usual_portions=diary.usual_portions(),
-                    location_id=location_id,
                 )
             # Over 50 MP (metadata.load_image). Pillow's own warning from about 89 MP comes first, in
             # Image.open, and is raised where warnings are errors (the server's PYTHONWARNINGS).
@@ -318,119 +268,74 @@ def create_app(
                 return result
             result = diary.save(result)
             # The photo is kept only for a logged meal, and storing it can't fail the analysis.
-            if (version := photos.save(owner, result.id, photo)) is not None:
+            if (version := photos.save(result.id, photo)) is not None:
                 url = f"/api/meals/{result.id}/photo?v={version}"
                 result = diary.save(result.model_copy(update={"photo_url": url}))
             return result
 
     @app.get("/api/meals/{meal_id}")
-    def show(meal_id: int, owner: DiaryOwner) -> MealResult:
-        with closing(Diary(settings.diary_db, owner)) as diary:
+    def show(meal_id: int) -> MealResult:
+        with closing(Diary(settings.diary_db)) as diary:
             return logged(diary, meal_id)
 
     @app.get("/api/meals/{meal_id}/photo", response_class=FileResponse, responses=JPEG_REPLY)
-    def meal_photo(meal_id: int, owner: DiaryOwner, size: Literal["full", "thumb"] = "full") -> FileResponse:
+    def meal_photo(meal_id: int, size: Literal["full", "thumb"] = "full") -> FileResponse:
         """The meal's stored photo as a JPEG: 1280 px on the long edge, or 320 px for `thumb`. Link
         to it through the meal's `photo_url`, whose version changes with the photo (meal ids can be
-        reused), so a cached copy never shows the wrong one. 404 unless the meal is yours."""
-        with closing(Diary(settings.diary_db, owner)) as diary:
+        reused), so a cached copy never shows the wrong one."""
+        with closing(Diary(settings.diary_db)) as diary:
             result = logged(diary, meal_id)
-        path = photos.path(owner, meal_id, thumb=size == "thumb")
+        path = photos.path(meal_id, thumb=size == "thumb")
         if result.photo_url is None or not path.is_file():
             raise HTTPException(404, f"Meal #{meal_id} has no photo.")
         return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": PHOTO_CACHE})
 
     @app.delete("/api/meals/{meal_id}", status_code=204)
-    def delete(meal_id: int, owner: DiaryOwner) -> None:
-        """Remove a meal and its photo from the diary, such as one logged from the wrong photo. 404
-        unless it's yours."""
-        with closing(Diary(settings.diary_db, owner)) as diary:
+    def delete(meal_id: int) -> None:
+        """Remove a meal and its photo from the diary, such as one logged from the wrong photo."""
+        with closing(Diary(settings.diary_db)) as diary:
             logged(diary, meal_id)
-            photos.delete(owner, meal_id)  # first, so a failure leaves the meal to delete again
+            photos.delete(meal_id)  # first, so a failure leaves the meal to delete again
             diary.delete(meal_id)
 
     @app.delete("/api/meals")
-    def clear_history(owner: DiaryOwner) -> Erased:
+    def clear_history() -> Erased:
         """Delete every meal in the diary with its photo, and the portions learned from corrections;
-        goals and settings stay. With nobody signed in, that is the local diary."""
-        photos.clear(owner)
-        with closing(Diary(settings.diary_db, owner)) as diary:
+        goals and settings stay."""
+        photos.clear()
+        with closing(Diary(settings.diary_db)) as diary:
             return Erased(meals=diary.clear())
 
-    def erase(owner: str | None) -> int:
-        """Delete the meals and their photos, learned portions and preferences kept for `owner`
-        (None: the local user)."""
-        photos.clear(owner)
-        with closing(Diary(settings.diary_db, owner)) as diary:
-            meals = diary.clear()
-        prefs.delete(owner or LOCAL_USER)
-        return meals
-
-    # Deleting an account (POST /api/auth/confirm-delete, or /delete-account with a password on a
-    # server whose emails don't go out) runs this before the account itself is deleted.
-    app.state.erase_user_data = erase
-
     @app.delete("/api/me")
-    def erase_me(owner: DiaryOwner) -> Erased:
-        """Delete everything kept for whoever asks: meals and their photos, learned portions, goals and
-        settings, so the app starts over. A signed-in account stays; POST /api/auth/delete-account
-        starts removing it too."""
-        return Erased(meals=erase(owner))
+    def erase_me() -> Erased:
+        """Delete everything kept: meals and their photos, learned portions, goals and settings, so
+        the app starts over."""
+        photos.clear()
+        with closing(Diary(settings.diary_db)) as diary:
+            meals = diary.clear()
+        prefs.delete()
+        return Erased(meals=meals)
 
     @app.post("/api/meals/{meal_id}/answer")
-    def answer(meal_id: int, body: Answer, owner: DiaryOwner, client: RequestClient) -> MealResult:
+    def answer(meal_id: int, body: Answer, client: RequestClient) -> MealResult:
         """Answer the clarifying question: Gemini revises the analysis and everything is recomputed."""
-        _limit_analysis(auth.limiter, owner, client)
-        with stores(owner) as (foods, diary):
+        _limit_analysis(limiter, client)
+        with stores() as (foods, diary):
             result = logged(diary, meal_id)
             if not result.question:
                 raise HTTPException(409, "This meal has no open question.")
             return diary.save(workflow(foods).answer(result, body.answer.strip()))
 
-    @app.post("/api/meals/{meal_id}/menu")
-    def rematch(meal_id: int, body: MenuChoice, owner: DiaryOwner, client: RequestClient) -> MealResult:
-        """Match a logged meal against the dining hall, day and meal the user names: its stored
-        photo is analyzed again (Gemini, so it counts against the analysis limit) with that hall's
-        dishes, `date` taken as certain. The meal keeps its id, time and photo; a question it had
-        answered goes. 404 unless it's yours or for an unknown location, 409 when no photo is
-        kept with it, 422 (meal unchanged) when no food is found this time, 503 without the dining
-        menus or when they can't be read (meal unchanged)."""
-        _limit_analysis(auth.limiter, owner, client)
-        with stores(owner) as (foods, diary):
-            result = logged(diary, meal_id)
-            path = photos.path(owner, meal_id)
-            if result.photo_url is None or not path.is_file():
-                raise HTTPException(409, f"Meal #{meal_id} has no saved photo to match again.")
-            if dining is None:
-                raise HTTPException(503, "Dining menus aren't connected.")
-            if body.location_id not in dining.location_ids():
-                raise HTTPException(404, f"No dining location {body.location_id}.")
-            fresh = workflow(foods).rematch(
-                result,
-                path,
-                location_id=body.location_id,
-                day=body.date,
-                meal=body.meal,
-                usual_portions=diary.usual_portions(),
-            )
-            if not fresh.items:  # the model found no meal this time: keep the one that's logged
-                raise HTTPException(422, "No food found in the photo this time; the meal wasn't changed.")
-            return diary.save(fresh)
-
     @app.patch("/api/meals/{meal_id}/items/{index}")
-    def fix(meal_id: int, index: int, body: Correction, owner: DiaryOwner) -> MealResult:
-        """Exact grams collapse the item's range and become a usual portion; fdc_id swaps the match.
-        `servings` counts a campus dish's listed serving and keeps its label; grams on a dish listed
-        per count ('1 Slice') switch the item to USDA, with a note. 400 for servings on a food that
-        isn't a campus dish, or grams together with servings (see pipeline.correct)."""
-        if body.grams is None and body.servings is None and body.fdc_id is None:
-            raise HTTPException(400, "Send grams, servings and/or fdc_id.")
-        with stores(owner) as (foods, diary):
+    def fix(meal_id: int, index: int, body: Correction) -> MealResult:
+        """Exact grams collapse the item's range and become a usual portion; fdc_id swaps the match."""
+        if body.grams is None and body.fdc_id is None:
+            raise HTTPException(400, "Send grams and/or fdc_id.")
+        with stores() as (foods, diary):
             result = logged(diary, meal_id)
             if not 0 <= index < len(result.items):
                 raise HTTPException(404, f"Meal #{meal_id} has no item {index}.")
-            corrected = correct(result, index, foods, grams=body.grams, servings=body.servings, fdc_id=body.fdc_id)
-            result = diary.save(corrected)
+            result = diary.save(correct(result, index, foods, grams=body.grams, fdc_id=body.fdc_id))
             if body.grams is not None:
                 diary.remember_portion(result.items[index].item.name, body.grams)
             return result
@@ -453,9 +358,9 @@ def create_app(
         )
 
     @app.get("/api/days/{day}")
-    def day(day: date, owner: DiaryOwner) -> DayView:
+    def day(day: date) -> DayView:
         """Meals and totals for one local date. Information only: no targets."""
-        with closing(Diary(settings.diary_db, owner)) as diary:
+        with closing(Diary(settings.diary_db)) as diary:
             summaries = summarize_days(diary.meals_between(day, day))
         if not summaries:
             return DayView(day=day, meals=[], totals={}, daily_value_pct={})

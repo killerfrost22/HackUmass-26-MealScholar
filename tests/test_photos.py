@@ -1,20 +1,14 @@
-"""Logged meals keep their photo: upright JPEGs without metadata, shown only to their owner and
-deleted with the meal, the history or the account. Storing one never fails the analysis."""
+"""Logged meals keep their photo: upright JPEGs without metadata, deleted with the meal, the history
+or everything. Storing one never fails the analysis."""
 
-import hashlib
 import io
 import logging
+import shutil
 
 import pytest
 from PIL import ExifTags, Image, ImageCms
-from test_auth import JPEG, PASSWORD, FakeVision, browser, register
 from test_metadata import IPHONE_HEIC, heic
-from test_web import CampusVision, DisplayCaseVision, client
-
-from mealscholar.auth import AuthService
-from mealscholar.auth_store import MemoryAuthStore
-from mealscholar.config import load_settings
-from mealscholar.web import create_app
+from test_web import JPEG, DisplayCaseVision, FakeVision, RiceVision, client
 
 NO_METADATA = {*range(0xE1, 0xF0), 0xFE}
 """JPEG markers that carry metadata: APP1 to APP15 (EXIF, XMP, ICC, IPTC...) and COM. APP0 is JFIF."""
@@ -22,15 +16,8 @@ NO_METADATA = {*range(0xE1, 0xF0), 0xFE}
 
 @pytest.fixture
 def home(tmp_path, food_db_path):
-    (tmp_path / "fdc.sqlite").symlink_to(food_db_path)
+    shutil.copy(food_db_path, tmp_path / "fdc.sqlite")  # a copy: symlinks need extra rights on Windows
     return tmp_path
-
-
-def accounts(home):
-    """The app with sign-in required and accounts in memory."""
-    settings = load_settings({"MEALSCHOLAR_HOME": str(home)})
-    auth = AuthService.from_settings(settings, store=MemoryAuthStore())
-    return create_app(settings, vision=CampusVision(), auth=auth)
 
 
 def camera_jpeg(size=(2000, 1000), left=(220, 30, 30), right=(30, 30, 220)) -> bytes:
@@ -65,13 +52,13 @@ def markers(jpeg: bytes) -> set[int]:
     return found
 
 
-def stored(home, owner_key="local"):
-    folder = home / "photos" / owner_key
+def stored(home):
+    folder = home / "photos" / "local"
     return sorted(p.name for p in folder.iterdir()) if folder.exists() else []
 
 
 def test_a_logged_meal_keeps_its_photo_upright_and_without_metadata(home):
-    app = client(home, CampusVision())
+    app = client(home, RiceVision())
     original = camera_jpeg()
     assert markers(original) >= {0xE1, 0xE2, 0xFE}  # EXIF and XMP, ICC, comment: all there to drop
     meal = app.post("/api/meals", content=original, headers=JPEG).json()
@@ -98,7 +85,7 @@ def test_a_logged_meal_keeps_its_photo_upright_and_without_metadata(home):
 
 
 def test_heic_photo_is_stored_upright_without_its_exif(home):
-    app = client(home, CampusVision())
+    app = client(home, RiceVision())
     meal = app.post("/api/meals", content=heic(orientation=6, size=(40, 30), **IPHONE_HEIC)).json()
     for query in ("", "&size=thumb"):
         res = app.get(meal["photo_url"] + query)
@@ -124,27 +111,8 @@ def test_answers_and_corrections_keep_the_photo(home):
     assert app.get(f"/api/meals/{meal['id']}").json()["photo_url"] == meal["photo_url"]
 
 
-def test_only_the_owner_gets_the_photo(home):
-    app = accounts(home)
-    sam, alex = browser(app), browser(app)
-    sam_id = register(sam, email="sam@example.com").json()["user"]["id"]
-    register(alex, email="alex@example.com")
-    meal = sam.post("/api/meals", content=camera_jpeg(), headers=JPEG).json()
-    url = meal["photo_url"]
-
-    assert sam.get(url).status_code == 200
-    for query in ("", "&size=thumb"):
-        res = alex.get(url + query)
-        assert (res.status_code, res.json()) == (404, {"detail": f"No meal #{meal['id']}."})  # as for no meal at all
-    assert alex.get("/api/meals/999/photo").json() == {"detail": "No meal #999."}
-    assert browser(app).get(url).status_code == 401  # signed out
-
-    key = hashlib.sha256(sam_id.encode()).hexdigest()[:16]  # the folder doesn't name the account
-    assert stored(home, key) == [f"{meal['id']}-thumb.jpg", f"{meal['id']}.jpg"]
-
-
 def test_deleting_a_meal_deletes_its_photo(home):
-    app = client(home, CampusVision())
+    app = client(home, RiceVision())
     gone = app.post("/api/meals", content=camera_jpeg()).json()
     kept = app.post("/api/meals", content=camera_jpeg()).json()
 
@@ -158,39 +126,28 @@ def test_deleting_a_meal_deletes_its_photo(home):
 def test_a_reused_meal_id_gets_a_new_photo_url(home):
     """SQLite gives the next meal the id of a deleted newest one: the version keeps a cached copy of
     the old photo from showing for the new meal."""
-    app = client(home, CampusVision())
+    app = client(home, RiceVision())
     first = app.post("/api/meals", content=camera_jpeg()).json()
     assert app.delete(f"/api/meals/{first['id']}").status_code == 204
     second = app.post("/api/meals", content=camera_jpeg(left=(30, 200, 30))).json()
     assert second["id"] == first["id"] and second["photo_url"] != first["photo_url"]
 
 
-def test_clearing_history_and_deleting_data_delete_the_photos(home):
-    app = accounts(home)
-    sam, alex = browser(app), browser(app)
-    sam_key = hashlib.sha256(register(sam, email="sam@example.com").json()["user"]["id"].encode()).hexdigest()[:16]
-    register(alex, email="alex@example.com")
-    kept = alex.post("/api/meals", content=camera_jpeg(), headers=JPEG).json()
-
+def test_clearing_history_and_erasing_everything_delete_the_photos(home):
+    app = client(home, RiceVision())
     for _ in range(2):
-        sam.post("/api/meals", content=camera_jpeg(), headers=JPEG)
-    assert len(stored(home, sam_key)) == 4
-    assert sam.delete("/api/meals").json() == {"meals": 2}
-    assert stored(home, sam_key) == []
-
-    meal = sam.post("/api/meals", content=camera_jpeg(), headers=JPEG).json()
-    assert sam.delete("/api/me").json() == {"meals": 1}
-    assert stored(home, sam_key) == [] and sam.get(meal["photo_url"]).status_code == 404
-
-    sam.post("/api/meals", content=camera_jpeg(), headers=JPEG)
-    assert sam.post("/api/auth/delete-account", json={"password": PASSWORD}).status_code == 204
-    assert stored(home, sam_key) == []
-    assert alex.get(kept["photo_url"]).status_code == 200  # nobody else's photos go
-
-    local = client(home, CampusVision())  # sign-in off: the local user's photos
-    local.post("/api/meals", content=camera_jpeg())
-    assert local.delete("/api/me").json() == {"meals": 1}
+        app.post("/api/meals", content=camera_jpeg(), headers=JPEG)
+    assert len(stored(home)) == 4
+    assert app.delete("/api/meals").json() == {"meals": 2}
     assert stored(home) == []
+
+    meal = app.post("/api/meals", content=camera_jpeg(), headers=JPEG).json()
+    assert len(stored(home)) == 2
+    assert app.delete("/api/me").json() == {"meals": 1}
+    assert stored(home) == [] and app.get(meal["photo_url"]).status_code == 404
+
+    again = app.post("/api/meals", content=camera_jpeg(), headers=JPEG).json()  # a new photo is kept as before
+    assert app.get(again["photo_url"]).status_code == 200
 
 
 @pytest.mark.parametrize("failure", ["no folder", "encoder"])
@@ -203,7 +160,7 @@ def test_a_photo_that_cant_be_stored_never_fails_the_meal(home, caplog, monkeypa
             raise ValueError("encoder broke")
 
         monkeypatch.setattr("mealscholar.photos.encode", broken)
-    app = client(home, CampusVision())
+    app = client(home, RiceVision())
     with caplog.at_level(logging.WARNING, logger="mealscholar.photos"):
         res = app.post("/api/meals", content=camera_jpeg())
     assert res.status_code == 200

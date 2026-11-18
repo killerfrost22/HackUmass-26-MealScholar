@@ -1,7 +1,7 @@
 {
   "name": "MealScholar",
   "short_name": "MealScholar",
-  "description": "Snap a photo of your meal and get the foods, how much is there and the nutrients, matched to the campus menu first.",
+  "description": "Snap a photo of your meal and get the foods, how much is there and the nutrients, from USDA FoodData Central.",
   "start_url": "./?source=home",
   "scope": "./",
   "display": "standalone",

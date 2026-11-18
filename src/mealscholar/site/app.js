@@ -1,10 +1,9 @@
-// MealScholar web client: a plain ES module over the JSON API (web.py, plus auth.py when accounts
-// are on, and prefs.py and dining.py when the server has them); no build step. Product rules
-// (README, AGENTS.md): every amount is an estimate, shown as its likely value; the low–high range
-// behind it shows only for people who switch ranges on (prefs.show_ranges, see rangesOn),
-// micronutrients are labelled estimates, and % Daily Value is information only. Goals exist only
-// when the person sets one themselves (GET /api/me/prefs); without that layer there are no targets
-// or "remaining" numbers.
+// MealScholar web client: a plain ES module over the JSON API (web.py and prefs.py); no build step.
+// Product rules (README, AGENTS.md): every amount is an estimate, shown as its likely value; the
+// low–high range behind it shows only for people who switch ranges on (prefs.show_ranges, see
+// rangesOn), micronutrients are labelled estimates, and % Daily Value is information only. Goals
+// exist only when the person sets one themselves (GET /api/me/prefs); without one there are no
+// targets or "remaining" numbers.
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -13,30 +12,17 @@ const els = {
   topbar: $(".topbar"),
   skip: $(".skip"),
   main: $("#main"),
-  auth: $("#auth"),
   capture: $("#capture"),
   captureTitle: $("#capture-title"),
   snapTools: $("#snap-tools"),
   snapToolsHome: $("#snap-tools-home"),
   locateAsk: $("#locate-ask"),
-  menuView: $("#menu"),
-  menuTitle: $("#menu-title"),
-  menuSub: $("#menu-sub"),
-  menuHalls: $("#menu-halls"),
-  menuBody: $("#menu-body"),
-  menuDays: $("#menu-days"),
-  menuPrev: $("#menu-prev"),
-  menuNext: $("#menu-next"),
-  menuDay: $("#menu-day"),
   weekView: $("#week"),
   weekPageTitle: $("#week-page-title"),
   weekSub: $("#week-sub"),
   weekPrev: $("#week-prev"),
   weekNext: $("#week-next"),
-  railAlerts: $("#rail-alerts"),
-  railDot: $("#rail-alerts .rail__dot"),
   railSettings: $("#rail-settings"),
-  railLogout: $("#rail-logout"),
   viewfinder: $("#viewfinder"),
   library: $("#photo"),
   camera: $("#camera"),
@@ -72,17 +58,14 @@ const els = {
   sheetTitle: $("#sheet-title"),
   sheetBody: $("#sheet-body"),
   toast: $("#toast"),
-  // The preferences layer: alerts, the side column, the week strip, onboarding and the panel sheet.
-  bell: $("#alerts-button"),
-  bellDot: $("#alerts-button .bell__dot"),
+  // The panel sheet: the Terms of Service and the Privacy Policy.
   panel: $("#panel"),
   panelKicker: $("#panel-kicker"),
   panelTitle: $("#panel-title"),
   panelIntro: $("#panel-intro"),
-  menuActions: $("#menu-actions"),
   panelBody: $("#panel-body"),
+  // The preferences layer: the week strip, the Recently uploaded column and onboarding.
   onboard: $("#onboard"),
-  dashSide: $("#dash-side"),
   dashRecent: $("#dash-recent"),
   strip: $("#dash-strip"),
   plus: $("#plus-button"),
@@ -103,49 +86,28 @@ const state = {
   shown: null, // the slot rendered into #result
   open: null, // { index, kind, id } while the edit sheet is open
   dismissedQuestion: null,
-  view: "today", // today, menu or week (the tabs), or analyze (a photo being read, then its result)
-  scroll: { analyze: 0, today: 0, menu: 0, week: 0, list: 0 },
+  view: "today", // today or week (the tabs), or analyze (a photo being read, then its result)
+  scroll: { analyze: 0, today: 0, week: 0, list: 0 },
   openedMeal: null,
-  // Accounts: only when GET /api/status says auth_required.
-  authRequired: false,
-  emailProvider: null,
-  emailSending: null, // GET /api/status email_sending; null from a server that doesn't say
-  user: null,
-  demoVerifyUrl: null,
-  resendUntil: 0, // ms timestamp: Resend link waits until then (after a send, or a 429)
-  resetToken: null,
-  deleteToken: null, // from a ?delete= link: the Delete your account? screen posts it
-  deleteUntil: 0, // ms timestamp: the delete panel's Resend waits until then
-  deleteDemoUrl: null,
-  authPath: [], // signed out: the account screens stacked on Welcome, e.g. ["signin", "forgot"]
-  // Bumped whenever the account changes (sign in, sign out, session end). Work started under an
-  // older epoch (an analysis, opening a meal) drops its result instead of showing it to someone else.
-  epoch: 0,
   // Dashboard
   day: null, // the day on show, YYYY-MM-DD
   todayKey: null, // what "today" was when last checked
   dashSeq: 0,
   microOpen: true, // the Week tab's vitamins card
   weekStart: null, // the Week tab's week (its Sunday) when it was paged away from the day on show
-  // Preferences (goals, dining halls, diet, favorites, alerts): only once GET /api/me/prefs answers
-  // 200, either for the signed-in account or for the server's one "local" user when sign-in is
-  // optional. Without that, nothing below exists and the app is as it was.
+  // Preferences (goals, ranges): once GET /api/me/prefs answers. Until then (or when it fails),
+  // nothing below exists and the app shows plain numbers.
   prefsOn: false,
   prefs: null,
-  prefsError: null, // GET /api/me/prefs failed with something other than a 404: a notice on Today
+  prefsError: null, // GET /api/me/prefs failed: a notice on Today
   prefsVersion: 0,
-  localUser: false, // sign-in optional on the server: the local user, who has no account sheet
-  dining: null, // { locations } while the campus menus are connected; false when they aren't
-  alerts: [],
-  nearest: null, // the nearest dining hall from the device location; looked up once, then kept
-  upcoming: null, // the side column: { meal, note, locationId } or { error, note }
   onboard: null, // { steps, at } while the set-up steps are on screen
 };
 
 const TIME_SOURCE = { exif: "time from the photo", device: "time from your device", upload: "time of upload" };
 
 // Icons are copied out of the sprite instead of referenced with <use>: every <use> is a shadow
-// tree the browser rebuilds on each style change, and a long menu has close to two hundred of them.
+// tree the browser rebuilds on each style change, and a long list holds many of them.
 const ICONS = new Map($$("svg.sprite symbol").map((s) => [s.id.replace(/^i-/, ""), { box: s.getAttribute("viewBox"), paths: s.innerHTML }]));
 const icon = (name) => {
   const s = ICONS.get(name);
@@ -167,8 +129,6 @@ class ApiError extends Error {
     this.status = status;
     this.field = field; // the form field the server says the error is about
     this.retryAfter = retryAfter;
-    this.signedOut = false; // the sign-in ended and the sign-in screen has taken over
-    this.cancelled = false; // the app called the request off (see stopAnalysis)
   }
 }
 
@@ -177,15 +137,12 @@ class ApiError extends Error {
 const BASE_PATH = location.pathname.endsWith("/") ? location.pathname : location.pathname.replace(/[^/]*$/, "");
 const serverUrl = (path) => (typeof path === "string" && path.startsWith("/") ? BASE_PATH + path.slice(1) : path);
 
-/** `session`: a 401 here means the sign-in ended (meal and day routes; some account routes). */
-async function api(path, { method = "GET", body, headers, signal, session = !path.startsWith("/api/auth/") } = {}) {
+async function api(path, { method = "GET", body, headers } = {}) {
   let response;
   try {
-    response = await fetch(serverUrl(path), { method, body, headers, signal, credentials: "same-origin" });
+    response = await fetch(serverUrl(path), { method, body, headers, credentials: "same-origin" });
   } catch {
-    const error = new ApiError(OFFLINE);
-    error.cancelled = Boolean(signal?.aborted);
-    throw error;
+    throw new ApiError(OFFLINE);
   }
   const isJson = response.headers.get("content-type")?.includes("application/json");
   const data = isJson ? await response.json().catch(() => null) : null;
@@ -194,12 +151,7 @@ async function api(path, { method = "GET", body, headers, signal, session = !pat
   const field = typeof data?.field === "string" ? data.field : null;
   let message = errorDetail(data) ?? `Request failed (${response.status}).`;
   if (response.status === 429) message = tooManyMessage(retryAfter) ?? message;
-  const error = new ApiError(message, { status: response.status, field, retryAfter });
-  if (response.status === 401 && session && !field) {
-    error.signedOut = state.authRequired;
-    signInLost();
-  }
-  throw error;
+  throw new ApiError(message, { status: response.status, field, retryAfter });
 }
 
 function errorDetail(data) {
@@ -393,14 +345,12 @@ function placeBands(root) {
 }
 
 // ---------------------------------------------------------------- views
-// Three tabs, Today, Menu and Week: the dock at the bottom on phones, the sidebar on laptops. A
-// photo has no tab of its own: picking one (the + button) opens the capture screen, which shows the
-// photo while it's read and then its result. A logged meal opens over Today.
+// Two tabs, Today and Week: the dock at the bottom on phones, the sidebar on laptops. A photo has
+// no tab of its own: picking one (the + button) opens the capture screen, which shows the photo
+// while it's read and then its result. A logged meal opens over Today.
 
-const TABS = ["today", "menu", "week"];
+const TABS = ["today", "week"];
 const isTab = (view) => TABS.includes(view);
-/** A tab that can show right now: Menu needs the campus menus. */
-const canShow = (view) => isTab(view) && (view !== "menu" || diningOn());
 
 /** The slot #result shows: the capture screen's new meal, or the meal opened over Today. */
 function shownKey() {
@@ -487,14 +437,13 @@ function setView(view) {
   if (section) replayEntrance(section);
   window.scrollTo(0, isTab(view) ? state.scroll[view] ?? 0 : 0);
   if (view === "today" || view === "week") ensureDashboard();
-  if (view === "menu") ensureMenus();
 }
 
 function scrollTop() {
   window.scrollTo({ top: 0, behavior: reducedMotion.matches ? "auto" : "smooth" });
 }
 
-const viewTitle = (view) => ({ today: els.todayTitle, menu: els.menuTitle, week: els.weekPageTitle })[view] ?? null;
+const viewTitle = (view) => ({ today: els.todayTitle, week: els.weekPageTitle })[view] ?? null;
 
 for (const tab of els.tabs) {
   tab.addEventListener("click", (event) => {
@@ -502,7 +451,7 @@ for (const tab of els.tabs) {
     // Past midnight, "today" moves on first, so a tap on Today goes to the new day.
     if (ensureToday()) loadDashboard();
     const view = tab.dataset.view;
-    if (!canShow(view)) return;
+    if (!isTab(view)) return;
     if (view !== state.view) setView(view);
     // Tapping the active tab again goes back to the start of that view, as in native apps.
     else if (state.slots[view]) closeSlot(view, { focus: view === "today" });
@@ -620,20 +569,6 @@ function localIso(date) {
   return `${day}T${time}${off >= 0 ? "+" : "-"}${pad(off / 60)}:${pad(off % 60)}`;
 }
 
-const AT_HALL_M = 400; // within this of a dining commons, the photo is taken to be from it
-
-async function uploadHall(coords) {
-  if (!diningOn()) return null;
-  if (coords) {
-    const near = await fetchNearest(coords[0], coords[1]); // where the photo was taken, not an earlier look-up
-    if (near && Number.isInteger(near.location?.id) && near.distance_m <= AT_HALL_M) return near.location.id;
-  }
-  const halls = state.prefs?.dining_halls ?? [];
-  const picked = menuHallIds().includes(pickedHall(menuHallIds())) ? pickedHall(menuHallIds()) : null;
-  const id = picked && picked !== DEFAULT_HALL ? picked : halls[0];
-  return Number.isInteger(id) ? id : null;
-}
-
 async function analyze(file) {
   if (!state.ready) return;
   if (state.analyzing) return toast("Still analyzing the last photo.");
@@ -658,13 +593,7 @@ async function analyze(file) {
   els.captureTitle.focus({ preventScroll: true });
 
   // The photo's URL belongs to this request, so opening another meal meanwhile can't take it away.
-  // The analysis also belongs to the account that started it: signing out or a session ending
-  // (resetData) calls it off, and a reply that comes back after that is dropped, never shown.
   const photoUrl = URL.createObjectURL(file);
-  const epoch = state.epoch;
-  const current = () => epoch === state.epoch;
-  const controller = new AbortController();
-  analysis = { controller, photoUrl };
   // A photo this browser can't draw (HEIC outside Safari) leaves the frame plain, not a broken image.
   els.previewImg.hidden = false;
   els.previewImg.onerror = () => (els.previewImg.hidden = true);
@@ -684,43 +613,27 @@ async function analyze(file) {
 
   const params = new URLSearchParams();
   params.set("taken_at", localIso(photoTime(file)));
-  let coords = null;
   if (els.location.checked) {
     try {
       const [lat, lon] = await devicePosition();
-      coords = [lat, lon];
       params.set("lat", lat);
       params.set("lon", lon);
     } catch (err) {
-      if (current()) setStatus(`${err.message} Continuing without location.`);
+      setStatus(`${err.message} Continuing without location.`);
     }
-    if (!current()) return; // stopAnalysis has already cleared the screen
   }
-  // The hall whose menu the server checks the photo against: the dining commons you're at, else
-  // the one picked on the Menu tab, else your main hall. Without one it's USDA only.
-  const hall = await uploadHall(coords);
-  if (!current()) return;
-  if (hall != null) params.set("location_id", hall);
-
   try {
     const result = await api(`/api/meals?${params}`, {
       method: "POST",
       body: file,
       headers: { "Content-Type": file.type || "application/octet-stream" },
-      signal: controller.signal,
     });
-    if (!current()) {
-      URL.revokeObjectURL(photoUrl);
-      return;
-    }
     setStatus("");
     // A photo this browser can't draw (HEIC outside Safari) shows as the server's stored JPEG.
     const drawn = !(els.previewImg.complete && !els.previewImg.naturalWidth);
     if (!drawn) URL.revokeObjectURL(photoUrl);
-    state.slots.analyze = { result, photoUrl: drawn ? photoUrl : null, nearest: null };
+    state.slots.analyze = { result, photoUrl: drawn ? photoUrl : null };
     state.scroll.analyze = 0;
-    // With the campus menus connected, the same coordinates also name the nearest dining hall, once.
-    if (coords && placeName(result.context) && diningOn()) noteNearest(coords, state.slots.analyze);
     if (state.view === "analyze") {
       syncResult({ enter: "analyze" });
     } else {
@@ -732,39 +645,15 @@ async function analyze(file) {
     if (result.id != null) refreshDays([mealDay(result)]);
   } catch (err) {
     URL.revokeObjectURL(photoUrl);
-    if (current() && !err.signedOut && !err.cancelled) {
-      setStatus(err.message, { error: true });
-      if (state.view !== "analyze") toast(`That photo couldn't be analyzed. ${err.message}`);
-    }
+    setStatus(err.message, { error: true });
+    if (state.view !== "analyze") toast(`That photo couldn't be analyzed. ${err.message}`);
   } finally {
-    // After a sign-out the capture screen belongs to whoever is next (stopAnalysis cleared it).
-    if (current()) {
-      analysis = null;
-      state.analyzing = false;
-      setViewfinder("empty");
-      els.previewImg.removeAttribute("src");
-      els.library.value = "";
-      els.camera.value = "";
-    }
+    state.analyzing = false;
+    setViewfinder("empty");
+    els.previewImg.removeAttribute("src");
+    els.library.value = "";
+    els.camera.value = "";
   }
-}
-
-let analysis = null; // { controller, photoUrl } while a photo is being analyzed
-
-/** Call off the analysis in progress and clear the capture screen: its photo, request and status. */
-function stopAnalysis() {
-  if (analysis) {
-    analysis.controller.abort();
-    URL.revokeObjectURL(analysis.photoUrl);
-    analysis = null;
-  }
-  state.analyzing = false;
-  setViewfinder("empty");
-  els.previewImg.removeAttribute("src");
-  els.library.value = "";
-  els.camera.value = "";
-  setStatus("");
-  setPickers(state.ready);
 }
 
 function discardSlot(key) {
@@ -897,7 +786,6 @@ function resultHtml(slot) {
         <h1 id="result-title" class="result__title" tabindex="-1">${noFood ? "No food found" : `${esc(capitalize(ctx.meal_slot))}${place}`}</h1>
         ${noFood ? "" : `<p class="result__meta">${meta.join(" ")}</p>`}
         ${totalHtml(result, photoUrl)}
-        ${slot.nearest && !noFood ? nearestNoteHtml(slot.nearest.note, "result") : ""}
       </div>
     </article>
     ${questionHtml(result)}
@@ -1026,7 +914,7 @@ function photoHtml(result, photoUrl) {
       const b = r.item.box_2d;
       if (!b) return "";
       const [ymin, xmin, ymax, xmax] = b.map((v) => Math.max(0, Math.min(1000, v)) / 10);
-      const name = r.source === "campus" && r.dish ? r.dish.name : r.item.name;
+      const name = r.item.name;
       const flip = xmin > 50 ? " box--flip" : ""; // in the right half, its name tag hangs to its left
       return `<span class="box${flip}" data-index="${i}" style="--i:${i};z-index:${layer.get(i)};top:${ymin}%;left:${xmin}%;width:${xmax - xmin}%;height:${ymax - ymin}%"><span class="box__n">${i + 1}</span><span class="box__tag">${esc(capitalize(name))}</span></span>`;
     })
@@ -1083,13 +971,13 @@ function quickAnswers(question) {
   // past a word like "is" or "the" (or a colon); a drink word takes the word before it along.
   const head = words(parts[0]);
   const first = [];
-  // A menu dish keeps its whole name ("the Chicken Tikka Masala or the Butter Chicken?"): capitalised
-  // words reach back to the article, up to four.
-  const dish = titleCase(head[head.length - 1] ?? "");
-  const room = dish ? 4 : (listed[0] ?? last).length;
+  // A proper name keeps its whole name ("the Chicken Tikka Masala or the Butter Chicken?"):
+  // capitalised words reach back to the article, up to four.
+  const named = titleCase(head[head.length - 1] ?? "");
+  const room = named ? 4 : (listed[0] ?? last).length;
   for (let i = head.length - 1; i >= 0 && first.length < room; i--) {
     if (QUICK_STOP.has(bare(head[i])) || /:$/.test(head[i])) break;
-    if (dish && !titleCase(head[i])) break;
+    if (named && !titleCase(head[i])) break;
     first.unshift(head[i]);
   }
   if (first.length === 1 && QUICK_DRINKS.test(bare(first[0])) && head.length >= 2) {
@@ -1151,235 +1039,30 @@ function itemsHtml(result) {
         <h2 id="foods-title" class="section-title" tabindex="-1">Foods</h2>
         <p class="eyebrow">${result.items.length} found</p>
       </div>
-      ${menuSourceHtml(result)}
-      <ol class="items">${result.items.map((r, i) => itemHtml(r, i, gramsScale, result)).join("")}</ol>
+      <ol class="items">${result.items.map((r, i) => itemHtml(r, i, gramsScale)).join("")}</ol>
     </section>`;
 }
 
-// ---- Which UMass Dining menu the foods were matched against, and the way to correct it
-
-const MEAL_WORD = { breakfast: "breakfast", lunch: "lunch", dinner: "dinner", late_night: "late night", grab_n_go: "Grab ’n Go", daily_offerings: "daily offerings" };
-const menuDayFormat = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" });
-const monthDayFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
-
-/** "2026-11-15" as that local day (not UTC midnight, which is the evening before here). */
-const isoDay = (key) => parseDay(key);
-
-/** "Nov 10 to 28", or "Nov 28 to Dec 3" across a month. */
-function dayRangeText(start, end) {
-  const [a, b] = [isoDay(start), isoDay(end)];
-  if (start === end) return monthDayFormat.format(a);
-  return a.getMonth() === b.getMonth() ? `${monthDayFormat.format(a)} to ${b.getDate()}` : `${monthDayFormat.format(a)} to ${monthDayFormat.format(b)}`;
-}
-
-/** "lunch · Sun, Nov 15" for a matched dish; "past menus" for one the hall served before. */
-function servedText(dish) {
-  if (!dish.date) return "from its past menus";
-  return [MEAL_WORD[dish.meal] ?? dish.meal, menuDayFormat.format(isoDay(dish.date))].filter(Boolean).join(" · ");
-}
-
-/** A logged meal with a kept photo can be matched again, while the menus are connected. */
-const canRematch = (result) => result.id != null && Boolean(result.photo_url) && diningOn();
-
-function menuSourceHtml(result) {
-  const m = result.menu;
-  const fix = canRematch(result);
-  const button = (label) =>
-    `<button class="link-btn menu-src__change" type="button" data-action="menu" aria-haspopup="dialog">${label}<span class="visually-hidden">: the dining hall and day</span></button>`;
-  if (!m) {
-    return fix ? `<div class="menu-src menu-src--none"><p class="menu-src__text">Ate at a dining hall?</p>${button("Match it to the menu")}</div>` : "";
-  }
-  const hall = `<strong>${esc(m.location_name)}</strong>`;
-  let text;
-  if (m.certain) {
-    // The day and the range stay whole ("Sat, Nov 14", never "Sat," then "Nov 14" on the next line).
-    const day = `<span class="nowrap">${esc(menuDayFormat.format(isoDay(m.date)))}</span>`;
-    const parts = [hall, m.meal ? esc(capitalize(MEAL_WORD[m.meal] ?? m.meal)) : null, day].filter(Boolean);
-    text = m.dishes ? `From UMass Dining: ${parts.join(" · ")}` : `No UMass Dining menu for ${hall} on ${day}`;
-  } else if (m.start && m.end) {
-    text = `Photo had no date: matched against ${hall} menus, <span class="nowrap">${esc(dayRangeText(m.start, m.end))}</span>`;
-  } else {
-    text = m.dishes ? `Photo had no date: matched against dishes ${hall} has served` : `No UMass Dining menus for ${hall} near this day`;
-  }
-  return `
-    <div class="menu-src${m.certain ? "" : " menu-src--unsure"}">
-      <span class="menu-src__icon" aria-hidden="true">${icon("fork")}</span>
-      <p class="menu-src__text">${text}</p>
-      ${fix ? button("Change") : ""}
-    </div>`;
-}
-
-/** The halls to pick from: the meal's own, the user's, then the dining commons; each once. */
-function rematchHalls(meal) {
-  const locations = state.dining?.locations ?? [];
-  const ids = [
-    meal.menu?.location_id,
-    ...(state.prefs?.dining_halls ?? []),
-    ...locations.filter((l) => l.is_dining_commons === true).map((l) => l.id),
-  ].filter(Number.isInteger);
-  // The legend already says "Dining hall": "Worcester", not four chips that each end in "Dining Commons".
-  const short = (name) => name.replace(/\s+Dining Commons$/i, "");
-  return [...new Set(ids)].map((id) => ({ id, name: short(id === meal.menu?.location_id ? meal.menu.location_name : hallNameById(id) ?? `Hall ${id}`) }));
-}
-
-/** Today first, then back a week, never before the first menu the meal was matched against;
-    the meal's own day and menu day stay on the list. */
-function rematchDays(meal) {
-  const today = localDate();
-  const floor = meal.menu && !meal.menu.certain && meal.menu.start ? meal.menu.start : null;
-  const days = [];
-  for (let n = 0; n < 8; n++) {
-    const key = shiftDay(today, -n);
-    if (floor && key < floor) break;
-    days.push(key);
-  }
-  for (const key of [mealDay(meal), meal.menu?.certain ? meal.menu.date : null]) {
-    if (key && key <= today && !days.includes(key)) days.push(key);
-  }
-  return days;
-}
-
-function dayChipLabel(key) {
-  const today = localDate();
-  if (key === today) return "Today";
-  if (key === shiftDay(today, -1)) return "Yesterday";
-  return menuDayFormat.format(isoDay(key));
-}
-
-function choiceHtml(name, value, label, checked) {
-  return `<label class="menu-pick"><input class="menu-pick__input" type="radio" name="${name}" value="${esc(value)}"${checked ? " checked" : ""}><span class="menu-pick__label">${esc(label)}</span></label>`;
-}
-
-function menuSheetHtml(meal) {
-  const m = meal.menu;
-  const halls = rematchHalls(meal);
-  const hall = m?.location_id ?? halls[0]?.id;
-  const day = m?.certain ? m.date : "";
-  const mealKey = m?.certain && m.meal && ["breakfast", "lunch", "dinner", "late_night"].includes(m.meal) ? m.meal : "";
-  const meals = [["", "Any meal"], ["breakfast", "Breakfast"], ["lunch", "Lunch"], ["dinner", "Dinner"], ["late_night", "Late night"]];
-  return `
-    <form class="rematch" data-form="menu">
-      <fieldset class="rematch__group">
-        <legend class="field-label">Dining hall</legend>
-        <div class="rematch__choices">${halls.map((h) => choiceHtml("hall", h.id, h.name, h.id === hall)).join("")}</div>
-      </fieldset>
-      <fieldset class="rematch__group">
-        <legend class="field-label">Day</legend>
-        <div class="rematch__choices">
-          ${rematchDays(meal).map((key) => choiceHtml("day", key, dayChipLabel(key), key === day)).join("")}
-          ${choiceHtml("day", "", "Not sure", !day)}
-        </div>
-      </fieldset>
-      <fieldset class="rematch__group">
-        <legend class="field-label">Meal <span class="rematch__optional">optional</span></legend>
-        <div class="rematch__choices">${meals.map(([key, label]) => choiceHtml("meal", key, label, key === mealKey)).join("")}</div>
-      </fieldset>
-      <p class="sheet-hint">MealScholar reads your photo again against that menu, which takes a few seconds. Not sure of the day? It checks the menus around the photo’s date.</p>
-      <p class="sheet-error" role="alert"></p>
-      <button class="btn btn--primary btn--block rematch__submit" type="submit">${icon("check")}<span data-label>Match to this menu</span></button>
-    </form>`;
-}
-
-function openMenuSheet() {
-  const meal = shownMeal();
-  if (!meal || !canRematch(meal)) return;
-  clearTimeout(closeTimer);
-  els.sheet.classList.remove("is-closing");
-  els.sheet.style.transform = "";
-  sheetMessage = "";
-  state.open = { index: null, kind: "menu", id: meal.id };
-  els.sheet.dataset.kind = "menu";
-  els.sheetKicker.textContent = "UMass Dining menu";
-  els.sheetTitle.textContent = "Where and when was this?";
-  els.sheetBody.innerHTML = menuSheetHtml(meal);
-  document.documentElement.classList.add("has-sheet");
-  if (!els.sheet.open) els.sheet.showModal();
-  els.sheetTitle.focus();
-}
-
-/** POST /api/meals/{id}/menu: the stored photo, analyzed again against the hall and day picked. */
-async function rematchMeal(form) {
-  const data = new FormData(form);
-  const body = { location_id: Number(data.get("hall")) };
-  if (data.get("day")) body.date = String(data.get("day"));
-  if (data.get("meal")) body.meal = String(data.get("meal"));
-  const id = state.open?.id;
-  const epoch = state.epoch;
-  const button = $('button[type="submit"]', form);
-  const label = $("[data-label]", button);
-  const error = $(".sheet-error", form);
-  if (id == null || !Number.isInteger(body.location_id)) return;
-  error.textContent = "";
-  await withBusy(button, async () => {
-    label.textContent = "Matching…";
-    try {
-      const result = await api(`/api/meals/${id}/menu`, { method: "POST", ...jsonBody(body) });
-      if (epoch !== state.epoch) return; // signed out meanwhile
-      updateMeal(result);
-      closeSheet({ message: result.menu ? `Matched against the ${result.menu.location_name} menu.` : "Matched again." });
-    } catch (err) {
-      if (error.isConnected && !err.signedOut) error.textContent = err.message;
-    } finally {
-      if (label.isConnected) label.textContent = "Match to this menu";
-    }
-  });
-}
-
-// ---- Where each food's numbers come from: the dining hall's own label, or USDA
-
-/** "Worcester" for "Worcester Dining Commons": the hall's name in a few words. */
-const hallShort = (name) => String(name ?? "").replace(/\s+Dining Commons$/i, "").trim();
-
-/** The server's note on a food the model named as a menu dish but counted from USDA
-    (pipeline._campus_item), and that food's reason in a few words. */
-function menuFallback(r, result) {
-  if (r.source === "campus" || !r.item.menu_item) return null;
-  const note = result.notes.find((n) => n.startsWith(`'${r.item.name}' is on the menu as ${r.item.menu_item} (`)) ?? null;
-  const reason = /didn't fit/.test(note ?? "")
-    ? "but its label didn’t fit this amount"
-    : /no serving count/.test(note ?? "")
-    ? "but its servings couldn’t be counted from the photo"
-    : "but counted from USDA";
-  const menu = result.menu?.location_name ? `${hallShort(result.menu.location_name)}’s menu` : "the menu";
-  return { note, text: `On ${menu} as ${r.item.menu_item}, ${reason}.` };
-}
-
-/** The source tag that leads a food's match line: the hall's label (filled) or USDA (outlined). */
-function sourceHtml(dish) {
-  if (dish) {
-    const hall = hallShort(dish.location_name) || "Dining hall";
-    return `<span class="src src--label">${icon("fork")}${esc(hall)} label<span class="visually-hidden">:</span></span>`;
-  }
-  return '<span class="src src--usda">USDA<span class="visually-hidden">:</span></span>';
-}
-
-function itemHtml(r, i, gramsScale, result) {
+function itemHtml(r, i, gramsScale) {
   const { item, match } = r;
   const range = itemGrams(item);
   const weighed = isExact(range);
   const kcal = r.nutrients.energy_kcal;
-  const dish = r.source === "campus" && r.dish ? r.dish : null;
-  const name = esc(capitalize(dish ? dish.name : item.name));
+  const name = esc(capitalize(item.name));
   const method = item.cooking_method === "unknown" ? "" : capitalize(item.cooking_method.replace(/_/g, " "));
   const meta = [
     method && `<span class="chip">${esc(method)}</span>`,
     weighed ? `<span class="chip chip--ok">${icon("check")}Set amount</span>` : null,
     item.hidden_fat_likely ? `<span class="chip chip--warn">${icon("drop")}${rangesOn() ? "Likely" : "Probably"} hidden oil or butter</span>` : null,
   ].filter(Boolean);
-  const energy = match || dish
+  const energy = match
     ? kcal
       ? rangeHtml(kcal, "kcal", undefined, { stack: true })
       : '<span class="value__none">No energy data</span>'
     : '<span class="chip chip--alert">Not counted</span>';
-  // The hall's label: its serving (the dish is the food's name above). A dish the hall lists but whose
-  // label didn't fit says so, under the USDA food it's counted as.
-  const fallback = menuFallback(r, result);
-  const why = fallback ? `<span class="item__why">${SEP}${esc(fallback.text)}</span>` : "";
-  const matchLine = dish
-    ? `<p class="item__match">${sourceHtml(dish)}<span class="item__desc">${dish.serving_size ? `${esc(dish.serving_size.toLowerCase())} per serving` : esc(dish.name)}</span><span class="item__id">${SEP}${esc(servedText(dish))}${item.name !== dish.name ? ` · what the photo shows: ${esc(item.name)}` : ""}</span></p>`
-    : match
-    ? `<p class="item__match">${sourceHtml(null)}<span class="item__desc">${esc(match.description)}</span>${why}<span class="item__id">${SEP}${esc(match.data_type)} #${esc(match.fdc_id)}</span></p>`
-    : `<p class="item__match is-missing">No close USDA match, so this food isn't in the totals yet. Pick one to count it.${why}</p>`;
+  const matchLine = match
+    ? `<p class="item__match"><span class="item__desc">${esc(match.description)}</span><span class="item__id">${SEP}USDA ${esc(match.data_type)} #${esc(match.fdc_id)}</span></p>`
+    : `<p class="item__match is-missing">No close USDA match, so this food isn't in the totals yet. Pick one to count it.</p>`;
   return `
     <li class="item card" data-index="${i}" style="--i:${i}">
       <div class="item__head">
@@ -1456,9 +1139,7 @@ function microDetailsHtml(rows) {
 }
 
 function notesHtml(result) {
-  // A food's own menu note already shows on its match line.
-  const shown = new Set(result.items.map((r) => menuFallback(r, result)?.note).filter(Boolean));
-  const notes = [...result.context.notes, ...result.notes.filter((n) => !shown.has(n))];
+  const notes = [...result.context.notes, ...result.notes];
   if (!notes.length) return "";
   return `
     <section class="block" aria-labelledby="notes-title">
@@ -1511,18 +1192,15 @@ async function deleteMeal(button) {
   const slot = key ? state.slots[key] : null;
   const id = slot?.result.id;
   if (id == null) return;
-  const epoch = state.epoch;
   await withBusy(button, async () => {
     try {
       await api(`/api/meals/${id}`, { method: "DELETE" });
     } catch (err) {
-      if (epoch !== state.epoch || err.signedOut) return;
       if (err.status !== 404) {
         toast(err.message);
         return;
       }
     }
-    if (epoch !== state.epoch) return;
     const day = mealDay(slot.result);
     if (state.openedMeal === id) state.openedMeal = null;
     closeSlot(key);
@@ -1589,9 +1267,6 @@ els.result.addEventListener("click", (event) => {
     case "food":
       openSheet(button.dataset.action, index);
       break;
-    case "menu":
-      openMenuSheet();
-      break;
     case "settings":
       openSettings(button.dataset.section, button);
       break;
@@ -1626,14 +1301,12 @@ function questionBusy(form, button, on) {
 async function answerQuestion(form, answer, button) {
   const meal = shownMeal();
   const id = meal?.id;
-  const epoch = state.epoch;
   if (!answer || id == null || !button || form.hasAttribute("data-busy")) return;
   const before = meal.totals.energy_kcal ?? null;
   $(".question__error", form).textContent = "";
   questionBusy(form, button, true);
   try {
     const result = await api(`/api/meals/${id}/answer`, { method: "POST", ...jsonBody({ answer }) });
-    if (epoch !== state.epoch) return; // signed out meanwhile
     answerShifts.set(id, { before, after: result.totals.energy_kcal ?? null });
     const onScreen = shownMeal()?.id === id && !els.result.hidden;
     if (onScreen) answerFx = id;
@@ -1646,7 +1319,7 @@ async function answerQuestion(form, answer, button) {
       toast(`Your answer is in. The ${rangesOn() ? "ranges" : "numbers"} now include it.`);
     }
   } catch (err) {
-    if (!form.isConnected || err.signedOut) return;
+    if (!form.isConnected) return;
     questionBusy(form, button, false);
     $(".question__error", form).textContent = err.message;
     button.focus({ preventScroll: true });
@@ -1732,8 +1405,7 @@ els.sheet.addEventListener("close", () => {
   state.open = null;
   els.sheetBody.innerHTML = "";
   highlight(null);
-  const opener = open?.index == null ? `[data-action="${open?.kind}"]` : `[data-action="${open.kind}"][data-index="${open.index}"]`;
-  if (open && restoreFocus) $(opener, els.result)?.focus();
+  if (open && restoreFocus) $(`[data-action="${open.kind}"][data-index="${open.index}"]`, els.result)?.focus();
   restoreFocus = true;
   if (sheetMessage) toast(sheetMessage);
   sheetMessage = "";
@@ -1806,7 +1478,6 @@ els.sheet.addEventListener("click", (event) => {
 els.sheet.addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.target;
-  if (form.dataset.form === "menu" && state.open) return rematchMeal(form);
   if (form.dataset.form !== "weigh" || !state.open) return;
   const value = Number(new FormData(form).get("grams"));
   correct(state.open.index, { grams: Math.round(value) }, $('button[type="submit"]', form), "weigh");
@@ -1854,10 +1525,8 @@ function weighHtml(r, i) {
 
 function foodHtml(r, i) {
   const options = [r.match, ...r.alternatives].filter(Boolean);
-  // A menu dish counts from the hall's label (its USDA match only fills in the rest), so no USDA food
-  // is current: picking any of them, its match too, switches the food to USDA.
   const list = options.length
-    ? options.map((m) => optionHtml(m, r.source !== "campus" && r.match?.fdc_id === m.fdc_id)).join("")
+    ? options.map((m) => optionHtml(m, r.match?.fdc_id === m.fdc_id)).join("")
     : '<li class="options__empty">No suggestions. Try a search above.</li>';
   return `
     <label class="field-label" for="search-${i}">Search USDA FoodData Central</label>
@@ -1887,16 +1556,14 @@ function optionHtml(food, current = false) {
 async function correct(index, body, button, kind) {
   const error = $(".sheet-error", els.sheetBody);
   const id = state.open?.id;
-  const epoch = state.epoch;
   if (id == null) return;
   await withBusy(button, async () => {
     try {
       const result = await api(`/api/meals/${id}/items/${index}`, { method: "PATCH", ...jsonBody(body) });
-      if (epoch !== state.epoch) return; // signed out meanwhile
       updateMeal(result);
       closeSheet({ message: kind === "weigh" ? "Weight set. Totals updated." : "Food changed. Totals updated." });
     } catch (err) {
-      if (error?.isConnected && !err.signedOut) error.textContent = err.message;
+      if (error?.isConnected) error.textContent = err.message;
     }
   });
 }
@@ -1918,8 +1585,7 @@ async function searchFoods(input) {
   try {
     const found = await api(`/api/foods?q=${encodeURIComponent(q)}&limit=6`);
     if (seq !== searchSeq || !list.isConnected) return;
-    const item = shownMeal()?.items[index];
-    const current = item?.source === "campus" ? null : item?.match?.fdc_id; // a menu dish has no current USDA food
+    const current = shownMeal()?.items[index]?.match?.fdc_id;
     list.innerHTML = found.foods.length
       ? (found.exact ? "" : '<li class="options__empty">No exact match. Closest results:</li>') +
         found.foods.map((f) => optionHtml(f, f.fdc_id === current)).join("")
@@ -1930,7 +1596,7 @@ async function searchFoods(input) {
     // The suggestions would repeat what the search shows; they come back when the field is cleared.
     suggest.hidden = found.foods.length > 0;
   } catch (err) {
-    if (seq !== searchSeq || !list.isConnected || err.signedOut) return;
+    if (seq !== searchSeq || !list.isConnected) return;
     list.innerHTML = `<li class="options__empty is-error">${esc(err.message)}</li>`;
     count.textContent = err.message; // the live region announces the failure too
   }
@@ -2024,8 +1690,6 @@ function dayTitle(key) {
   const sameYear = date.getFullYear() === parseDay(today).getFullYear();
   return { title: weekdayLong.format(date), sub: (sameYear ? monthDay : monthDayYear).format(date) };
 }
-
-const firstName = (user) => (user?.name ?? "").trim().split(/\s+/)[0] ?? "";
 
 function renderDashHead() {
   const key = state.day;
@@ -2176,7 +1840,6 @@ function ensureDashboard() {
   if (ensureToday() || !rendered.day.startsWith(`${state.day}|`)) return loadDashboard();
   const keys = [state.day, ...pastKeys(weekKeys())];
   if (keys.some((key) => !dayCache.get(key)?.value || dayCache.get(key).stale)) loadDashboard();
-  else refreshDining(); // the upcoming meal may have moved on
 }
 
 async function loadDashboard() {
@@ -2189,7 +1852,6 @@ async function loadDashboard() {
   renderDashHead();
   renderDay(); // straight from the cache: the day if it is known, else a skeleton
   renderWeek();
-  ensureUpcoming();
   await Promise.allSettled([dayTask]);
   if (seq !== state.dashSeq) return;
   renderDay();
@@ -2857,31 +2519,15 @@ function dashClick(event) {
     }
     case "reboot":
       // The app never started: reload once the server answers, else say why again.
-      return api("/api/status", { session: false }).then(() => location.reload(), bootFailed);
+      return api("/api/status").then(() => location.reload(), bootFailed);
     case "locate-allow":
       return allowLocation(action);
     case "locate-later":
       return dismissLocateAsk();
-    case "resend":
-      return resendLink(action);
-    case "demo-verify":
-      return demoVerify(action);
     case "settings":
       return openSettings(action.dataset.section, action);
-    case "retry-upcoming":
-      state.upcoming = null;
-      return loadUpcoming();
     case "retry-prefs":
       return retryPrefs(action);
-  }
-  const dish = target.closest("[data-dish]");
-  if (dish) return openDish(dish.dataset.dish, dish);
-  if (target.closest("[data-to-menu]")) {
-    event.preventDefault();
-    setView("menu");
-    syncHistory();
-    els.menuTitle.focus({ preventScroll: true });
-    return;
   }
   const meal = target.closest("[data-meal]");
   if (meal) openMealFrom(meal);
@@ -2898,7 +2544,6 @@ function clearMealError() {
 
 async function openMealFrom(button) {
   const id = button.dataset.meal;
-  const epoch = state.epoch;
   clearMealError();
   state.scroll.list = window.scrollY;
   state.openedMeal = id;
@@ -2906,9 +2551,8 @@ async function openMealFrom(button) {
     try {
       const result = await api(`/api/meals/${encodeURIComponent(id)}`);
       await photoReady(serverUrl(result.photo_url));
-      if (epoch === state.epoch) openLogged(result); // never into someone else's session
+      openLogged(result);
     } catch (err) {
-      if (err.signedOut || epoch !== state.epoch) return;
       // One alert at a time, right under the meal that was tapped.
       clearMealError();
       const alert = document.createElement("p");
@@ -2939,115 +2583,18 @@ function openLogged(result) {
   syncHistory();
 }
 
-// -------------------------------------------------------------- accounts
-// Only when GET /api/status says auth_required: true. The session is an HttpOnly cookie, so the
-// page never sees a token; GET /api/auth/me says who is signed in.
+// ------------------------------------------------------------- app shell
 
-/** Say "we sent a link" only when mail really goes out: GET /api/status email_sending (SMTP fully set
-    up on the server). A server that doesn't send that field falls back to the provider name, where
-    "outbox" (the default) only queues mail and "smtp" wasn't sending yet. */
-const NOT_SENDING = new Set(["outbox", "smtp"]);
-const emailSending = () =>
-  typeof state.emailSending === "boolean" ? state.emailSending : Boolean(state.emailProvider) && !NOT_SENDING.has(state.emailProvider);
-const NOT_SWITCHED_ON = "Email sending isn't switched on yet";
-
-function enableAccounts(status) {
-  state.authRequired = true;
-  state.emailProvider = status.email_provider ?? null;
-  state.emailSending = typeof status.email_sending === "boolean" ? status.email_sending : null;
-  state.localUser = false;
-  document.body.dataset.accounts = "on";
+/** Settings opens from the gear in the sidebar and, on phones, the gear in the top bar, once the
+    preferences have loaded. */
+function updateSettingsUi() {
+  els.accountButton.hidden = !state.prefsOn;
+  els.railSettings.hidden = !state.prefsOn;
 }
 
-let recheck = null;
-
-/** A 401 without accounts on: the server may have just switched them on. */
-function signInLost() {
-  if (state.authRequired) return sessionEnded();
-  recheck ??= api("/api/status", { session: false })
-    .then((status) => {
-      if (status?.auth_required !== true) return;
-      enableAccounts(status);
-      sessionEnded({ notice: "MealScholar now uses accounts. Sign in or create one to continue." });
-    })
-    .catch(() => {})
-    .finally(() => (recheck = null));
-}
-
-function initials(user) {
-  const letter = (s) => s.match(/[\p{L}\p{N}]/u)?.[0] ?? "";
-  const words = (user?.name ?? "").trim().split(/\s+/).filter(Boolean);
-  let out = words.length ? letter(words[0]) + (words.length > 1 ? letter(words[words.length - 1]) : "") : "";
-  if (!out) out = letter(user?.email ?? "") || "?";
-  return out.toUpperCase();
-}
-
-function updateAccountUi() {
-  const user = state.authRequired ? state.user : null;
-  const settingsOnly = !user && state.prefsOn && state.localUser; // no account, but settings to change
-  els.accountButton.hidden = !(user || settingsOnly);
-  els.railSettings.hidden = !(user || settingsOnly);
-  els.railLogout.hidden = !user;
-  els.accountButton.classList.toggle("avatar--gear", settingsOnly);
-  document.body.dataset.account = user ? "on" : "off";
-  if (settingsOnly) {
-    els.accountButton.innerHTML = icon("gear"); // fixed markup, nothing from the server
-    els.accountButton.setAttribute("aria-label", "Settings");
-    return;
-  }
-  if (!user) return;
-  els.accountButton.textContent = initials(user);
-  els.accountButton.setAttribute("aria-label", `${state.prefsOn ? "Settings and account" : "Account"}, ${user.name || user.email}`);
-}
-
-// What was typed on the account screens (never a password) and a reset link's token live in this
-// tab's sessionStorage, so a refresh, or iOS reloading the tab after a trip to a password manager,
-// keeps the screen as it was.
-const DRAFT_KEY = "mealscholar:account-draft";
-const RESET_KEY = "mealscholar:reset-token";
-
-const tabStore = {
-  get(key) {
-    try {
-      return sessionStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  },
-  set(key, value) {
-    try {
-      if (value == null) sessionStorage.removeItem(key);
-      else sessionStorage.setItem(key, value);
-    } catch {
-      // storage blocked (private mode): the screen still works, it just won't survive a refresh
-    }
-  },
-};
-
-let authDraft = { email: "", name: "" };
-
-function setAuthDraft(change) {
-  authDraft = { ...authDraft, ...change };
-  tabStore.set(DRAFT_KEY, JSON.stringify(authDraft));
-}
-
-function clearAuthDraft() {
-  authDraft = { email: "", name: "" };
-  tabStore.set(DRAFT_KEY, null);
-}
-
-function loadAuthDraft() {
-  try {
-    const saved = JSON.parse(tabStore.get(DRAFT_KEY) ?? "null");
-    if (saved && typeof saved === "object") authDraft = { email: String(saved.email ?? ""), name: String(saved.name ?? "") };
-  } catch {
-    clearAuthDraft();
-  }
-}
-
-function forgetResetToken() {
-  state.resetToken = null;
-  tabStore.set(RESET_KEY, null);
+/** Above Today: a notice when the preferences didn't load. */
+function renderBanner() {
+  els.banner.innerHTML = state.prefsError ? prefsNoticeHtml(state.prefsError) : "";
 }
 
 /** Close the sheets at once, with no animation and no focus return: the screen under them is going,
@@ -3071,67 +2618,24 @@ function dropSheets() {
   if (document.body.dataset.screen !== "boot") window.MealScholarInstall?.close?.(true);
 }
 
-/** Leave the app for one of the account screens. */
-function showAuth(screen, options = {}) {
-  dropSheets();
-  if (screen !== "reset") forgetResetToken(); // leaving Set a new password, however it happens
-  document.body.dataset.screen = "auth";
-  els.auth.hidden = false;
-  els.auth.dataset.screen = screen;
-  els.auth.innerHTML = AUTH_SCREENS[screen]({ ...authDraft, ...options });
-  placeBands(els.auth);
-  window.scrollTo(0, 0);
-  replayEntrance(els.auth);
-  // Why you are here (a session that ended) is read first; else the first empty field, or the heading.
-  const notice = $(".notice", els.auth);
-  const field = finePointer.matches ? $("input:not([value]), input[value='']", els.auth) : null;
-  (notice ?? field ?? $("h1", els.auth))?.focus({ preventScroll: true });
-}
-
-/** Signed-out screens with their own history entry, stacked on Welcome. Set a new password and
-    Confirm email open from a link and show on the base entry. */
-const STACKED = new Set(["signin", "register", "forgot"]);
-
-/** A link between account screens. One already further down the stack is stepped back to, so the
-    back button and the screen's own Back agree. */
-function goAuth(screen) {
-  if (screen !== "welcome" && !STACKED.has(screen)) return showAuth(screen);
-  const path = state.authPath;
-  const at = path.indexOf(screen);
-  state.authPath = screen === "welcome" ? [] : at >= 0 ? path.slice(0, at + 1) : [...path, screen];
-  showAuth(screen);
-  syncHistory();
-}
-
-/** Back or forward landed on an account screen's entry. */
-function showAuthPath(path) {
-  state.authPath = path.filter((screen) => STACKED.has(screen));
-  showAuth(state.authPath.at(-1) ?? "welcome");
-}
-
-/** Into the app: the home screen, with this account's data. */
+/** Into the app: the home screen. */
 function enterApp({ focus = false } = {}) {
-  forgetResetToken();
   document.body.dataset.screen = "app";
-  els.auth.hidden = true;
-  els.auth.innerHTML = "";
   els.onboard.hidden = true;
   els.onboard.innerHTML = "";
   state.onboard = null;
-  state.authPath = [];
-  updateAccountUi();
-  updateBell();
+  updateSettingsUi();
   updatePrefsUi();
   renderBanner();
   restoreLocation();
-  // A link to #menu or #week (or a refresh on one) opens that tab, once, above Today.
-  const route = bootRoute && canShow(bootRoute) ? bootRoute : "today";
+  // A link to #week (or a refresh on it) opens that tab, once, above Today.
+  const route = bootRoute && isTab(bootRoute) ? bootRoute : "today";
   bootRoute = null;
   state.view = route;
   document.body.dataset.view = route;
   syncTabs();
   syncResult();
-  syncHistory(); // the account screens' entries collapse into the app's home entry
+  syncHistory(); // the set-up steps' entry becomes the app's home entry
   window.scrollTo(0, 0);
   if (!state.nutrients.length) {
     loadNutrients().then(() => {
@@ -3140,368 +2644,17 @@ function enterApp({ focus = false } = {}) {
     });
   }
   loadDashboard();
-  if (route === "menu") ensureMenus();
   renderLocateAsk();
   if (focus) viewTitle(route)?.focus({ preventScroll: true });
 }
 
-/** Signed in, leaving a link screen: the set-up steps first if they were never finished. */
-function enterHome(options) {
-  if (!needsOnboarding()) return enterApp(options);
-  forgetResetToken(); // as enterApp does, so a refresh doesn't bring back Set a new password
-  startOnboarding();
-}
-
-/** Forget everything that belongs to the account that was signed in, including work still in
-    flight: an analysis is called off, and late replies are dropped (see state.epoch). */
-function resetData() {
-  state.epoch += 1;
-  dropSheets();
-  stopAnalysis();
-  state.dashSeq += 1;
-  dayCache.clear();
-  rendered.day = "";
-  rendered.week = "";
-  discardSlot("analyze");
-  discardSlot("today");
-  state.shown = null;
-  state.open = null;
-  state.openedMeal = null;
-  state.dismissedQuestion = null;
-  answerShifts.clear();
-  answerFx = null;
-  state.day = null;
-  state.todayKey = null;
-  state.microOpen = true;
-  state.weekStart = null;
-  state.scroll = { analyze: 0, today: 0, menu: 0, week: 0, list: 0 };
-  state.view = "today";
-  document.body.dataset.view = "today";
-  // Sharing location is each person's own choice: the next account starts with it off.
-  els.location.checked = false;
-  setStatus("", { target: els.locationStatus });
-  placeTools();
-  els.result.innerHTML = "";
-  els.result.hidden = true;
-  delete document.body.dataset.result;
-  els.locateAsk.hidden = true;
-  els.locateAsk.innerHTML = "";
-  resetMenus();
-  els.dashDay.innerHTML = "";
-  els.dashWeek.innerHTML = "";
-  els.dashMicro.innerHTML = "";
-  els.dashNotice.innerHTML = "";
-  els.today.dataset.state = "loading";
-  els.dashWeek.dataset.state = "loading";
-  // The preferences layer belongs to the account too.
-  state.prefsOn = false;
-  state.prefs = null;
-  state.prefsError = null;
-  state.prefsVersion += 1;
-  applyRanges();
-  state.dining = null;
-  state.alerts = [];
-  state.nearest = null;
-  state.upcoming = null;
-  state.onboard = null;
-  upcomingSeq += 1;
-  delete document.body.dataset.prefs;
-  delete document.body.dataset.dining;
-  els.dashSide.innerHTML = "";
-  els.dashRecent.innerHTML = "";
-  els.strip.hidden = true;
-  els.strip.innerHTML = "";
-  strip.key = "";
-  els.onboard.hidden = true;
-  els.onboard.innerHTML = "";
-  updateBell();
-}
-
-/** Into the app as this account, by way of the set-up steps the first time. */
-async function signedIn(user, message) {
-  resetData();
-  state.user = user;
-  clearAuthDraft();
-  await setupPrefs();
-  if (needsOnboarding()) startOnboarding();
-  else enterApp({ focus: true });
-  if (message) toast(message);
-}
-
-/** Signed out (on purpose, or the session ended): an account screen, with this account's data gone. */
-function leaveAccount(screen, options = {}) {
-  resetData();
-  state.user = null;
-  state.demoVerifyUrl = null;
-  state.resendUntil = 0;
-  // A delete link this account asked for is its own: the next account starts without one.
-  state.deleteUntil = 0;
-  state.deleteDemoUrl = null;
-  clearInterval(deleteTimer);
-  deleteTimer = null;
-  updateAccountUi();
-  renderBanner();
-  state.authPath = STACKED.has(screen) ? [screen] : [];
-  showAuth(screen, options);
-  syncHistory();
-}
-
-/** The sign-in ended (a 401 from a meal or day call): back to the sign-in screen. */
-function sessionEnded({ notice = "Your session ended. Sign in again to continue." } = {}) {
-  if (document.body.dataset.screen === "auth") return;
-  if (state.user?.email) setAuthDraft({ email: state.user.email });
-  leaveAccount("signin", { notice });
-}
-
 async function loadNutrients() {
   try {
-    state.nutrients = await api("/api/nutrients", { session: false });
+    state.nutrients = await api("/api/nutrients");
   } catch {
-    // Labels for the nutrient rows; the next sign-in tries again.
+    // Labels for the nutrient rows; entering the app tries again.
   }
 }
-
-async function refreshUser() {
-  try {
-    const { user } = await api("/api/auth/me", { session: true });
-    state.user = user;
-    updateAccountUi();
-  } catch {
-    // signed out (handled by api) or offline: keep what we have
-  }
-}
-
-// ---- screens
-
-const backHtml = (to, label) => `<div class="result__nav"><button class="back" type="button" data-auth="${to}">${icon("chevron-left")}${label}</button></div>`;
-
-function fieldHtml({ id, name, label, type = "text", autocomplete, value = "", hint = "", optional = false }) {
-  const describedby = [hint && `${id}-hint`, `${id}-error`].filter(Boolean).join(" ");
-  const email = type === "email" ? ' autocapitalize="none" spellcheck="false"' : "";
-  return `
-    <div class="form-field">
-      <label class="form-field__label" for="${id}">${label}${optional ? ' <span class="form-field__optional">Optional</span>' : ""}</label>
-      <input id="${id}" class="field" name="${name}" type="${type}" autocomplete="${autocomplete}" value="${esc(value)}" aria-describedby="${describedby}"${email}>
-      ${hint ? `<p id="${id}-hint" class="form-field__hint">${hint}</p>` : ""}
-      <p id="${id}-error" class="field-error" hidden></p>
-    </div>`;
-}
-
-function passwordFieldHtml({ id, name, label, autocomplete, hint = "" }) {
-  const describedby = [hint && `${id}-hint`, `${id}-error`].filter(Boolean).join(" ");
-  return `
-    <div class="form-field">
-      <label class="form-field__label" for="${id}">${label}</label>
-      <span class="pw">
-        <input id="${id}" class="field" name="${name}" type="password" autocomplete="${autocomplete}" autocapitalize="none" spellcheck="false" aria-describedby="${describedby}">
-        <button class="pw__toggle" type="button" data-action="toggle-password" aria-controls="${id}"><span class="pw__label">Show</span><span class="visually-hidden"> password</span></button>
-      </span>
-      ${hint ? `<p id="${id}-hint" class="form-field__hint">${hint}</p>` : ""}
-      <p id="${id}-error" class="field-error" hidden></p>
-    </div>`;
-}
-
-const EMAIL_NOTE = `<p class="auth-note">${icon("info")}<span>${NOT_SWITCHED_ON}, so the link may not arrive.</span></p>`;
-
-function sampleHtml() {
-  return `
-    <div class="card welcome__sample" aria-hidden="true">
-      <p class="eyebrow">Example</p>
-      <p class="welcome__sample-title">Lunch</p>
-      <div class="total">
-        <p class="eyebrow">Calories, this meal</p>
-        <p class="total__value"><span class="total__num">520</span><span class="total__unit">kcal</span></p>
-        ${rangesOn() ? "<p class=\"total__range\">Most likely, in a range of <strong>407–655&nbsp;kcal</strong></p>" : ""}
-        ${bandHtml("sample-kcal", { low: 407, likely: 520, high: 655 }, { dark: true })}
-      </div>
-      <ul class="welcome__foods">
-        <li><span>Chicken fried rice</span>${rangeHtml({ low: 220, likely: 280, high: 350 }, "g", grams)}</li>
-        <li><span>Steamed broccoli</span>${rangeHtml({ low: 70, likely: 95, high: 130 }, "g", grams)}</li>
-      </ul>
-    </div>`;
-}
-
-const AUTH_SCREENS = {
-  welcome: () => `
-    <div class="auth-screen auth-screen--welcome">
-      <header class="view-head welcome__head">
-        <h1 class="view-title" tabindex="-1">Every meal, from one photo</h1>
-        <p class="lede">Photograph a meal to see its foods, how much is there and its nutrients, checked against the campus menu first. No weighing.</p>
-      </header>
-      ${sampleHtml()}
-      <div class="welcome__actions">
-        <button class="cta cta--block" type="button" data-auth="register"><span class="cta__pill">Create account</span><span class="cta__dot" aria-hidden="true">${icon("arrow")}</span></button>
-        <button class="btn btn--secondary btn--block" type="button" data-auth="signin">Sign in</button>
-        <p class="welcome__fine">Your meals go into your own diary. No targets, just what you ate.</p>
-      </div>
-    </div>`,
-
-  signin: ({ email = "", notice = "" } = {}) => `
-    <div class="auth-screen">
-      ${backHtml("welcome", "Back")}
-      <header class="auth-head">
-        <p class="eyebrow">Account</p>
-        <h1 class="view-title" tabindex="-1">Sign in</h1>
-        <p class="lede">Welcome back. Your diary is where you left it.</p>
-      </header>
-      ${notice ? `<p class="notice" role="status" tabindex="-1">${icon("info")}<span>${esc(notice)}</span></p>` : ""}
-      <form class="card form" data-form="signin" novalidate>
-        ${fieldHtml({ id: "signin-email", name: "email", label: "Email", type: "email", autocomplete: "email", value: email })}
-        ${passwordFieldHtml({ id: "signin-password", name: "password", label: "Password", autocomplete: "current-password" })}
-        <p class="form__aside"><button class="link-btn" type="button" data-auth="forgot">Forgot password?</button></p>
-        <p class="form-error" role="alert" hidden></p>
-        <button class="btn btn--primary btn--block" type="submit">Sign in</button>
-      </form>
-      <p class="auth-switch">New to MealScholar? <button class="link-btn" type="button" data-auth="register">Create an account</button></p>
-    </div>`,
-
-  register: ({ email = "", name = "" } = {}) => `
-    <div class="auth-screen">
-      ${backHtml("welcome", "Back")}
-      <header class="auth-head">
-        <p class="eyebrow">Account</p>
-        <h1 class="view-title" tabindex="-1">Create your account</h1>
-        <p class="lede">Your meals go into your own private diary.</p>
-      </header>
-      <form class="card form" data-form="register" novalidate>
-        ${fieldHtml({ id: "register-name", name: "name", label: "Name", autocomplete: "name", value: name, optional: true })}
-        ${fieldHtml({ id: "register-email", name: "email", label: "Email", type: "email", autocomplete: "email", value: email })}
-        ${passwordFieldHtml({ id: "register-password", name: "password", label: "Password", autocomplete: "new-password", hint: "At least 8 characters." })}
-        <p class="form-error" role="alert" hidden></p>
-        <button class="btn btn--primary btn--block" type="submit">Create account</button>
-      </form>
-      <p class="auth-switch">Already have an account? <button class="link-btn" type="button" data-auth="signin">Sign in</button></p>
-    </div>`,
-
-  forgot: ({ email = "", sent = false } = {}) => {
-    const note = emailSending() ? "" : EMAIL_NOTE;
-    if (sent) {
-      const address = email ? `<strong>${esc(email)}</strong>` : "that email";
-      return `
-        <div class="auth-screen">
-          ${backHtml("signin", "Sign in")}
-          <header class="auth-head"><p class="eyebrow">Password</p><h1 class="view-title" tabindex="-1">Check your email</h1></header>
-          <div class="card sent" role="status">
-            <span class="sent__icon" aria-hidden="true">${icon("mail")}</span>
-            <p>If there's an account for ${address}, ${emailSending() ? "we sent it a link" : "we made a link"} to set a new password. It works for 1 hour.</p>
-          </div>
-          ${note}
-          <button class="btn btn--secondary btn--block" type="button" data-auth="signin">Back to sign in</button>
-        </div>`;
-    }
-    return `
-      <div class="auth-screen">
-        ${backHtml("signin", "Sign in")}
-        <header class="auth-head">
-          <p class="eyebrow">Password</p>
-          <h1 class="view-title" tabindex="-1">Reset your password</h1>
-          <p class="lede">Enter the email for your account. We'll send a link to set a new password.</p>
-        </header>
-        <form class="card form" data-form="forgot" novalidate>
-          ${fieldHtml({ id: "forgot-email", name: "email", label: "Email", type: "email", autocomplete: "email", value: email })}
-          <p class="form-error" role="alert" hidden></p>
-          <button class="btn btn--primary btn--block" type="submit">Send reset link</button>
-        </form>
-        ${note}
-      </div>`;
-  },
-
-  reset: () => `
-    <div class="auth-screen">
-      <header class="auth-head">
-        <p class="eyebrow">Password</p>
-        <h1 class="view-title" tabindex="-1">Set a new password</h1>
-        <p class="lede">Choose a new password. You'll be signed in right after.</p>
-      </header>
-      <form class="card form" data-form="reset" novalidate>
-        ${passwordFieldHtml({ id: "reset-password", name: "password", label: "New password", autocomplete: "new-password", hint: "At least 8 characters." })}
-        <p class="form-error" role="alert" hidden></p>
-        <button class="btn btn--primary btn--block" type="submit">Save new password</button>
-      </form>
-      <p class="auth-switch"><button class="link-btn" type="button" data-auth="${state.user ? "app" : "signin"}">${state.user ? "Keep my current password" : "Back to sign in"}</button></p>
-    </div>`,
-
-  verify: ({ phase = "pending", message = "", confirmed = "" } = {}) => {
-    if (phase === "pending") {
-      return `
-        <div class="auth-screen">
-          <header class="auth-head">
-            <p class="eyebrow">Email</p>
-            <h1 class="view-title" tabindex="-1">Confirming your email</h1>
-            <p class="lede auth-wait"><span class="spinner" aria-hidden="true"></span>One moment.</p>
-          </header>
-        </div>`;
-    }
-    const next = state.user ? "app" : "signin";
-    const label = state.user ? "Continue" : "Sign in";
-    if (phase === "done") {
-      // Signed in as someone else: say whose email the link confirmed, and who is still signed in.
-      const address = confirmed ? `<strong>${esc(confirmed)}</strong>` : "";
-      const lede = state.user
-        ? `That link confirmed ${address || "another account's email"}. You're still signed in as <strong>${esc(state.user.email)}</strong>.`
-        : address
-          ? `Thanks. ${address} is confirmed.`
-          : "Thanks. Your account is all set.";
-      return `
-        <div class="auth-screen">
-          <header class="auth-head">
-            <p class="eyebrow">Email</p>
-            <h1 class="view-title" tabindex="-1">Email confirmed</h1>
-            <p class="lede">${lede}</p>
-          </header>
-          <button class="btn btn--primary btn--block" type="button" data-auth="${next}">${label}</button>
-        </div>`;
-    }
-    return `
-      <div class="auth-screen">
-        <header class="auth-head">
-          <p class="eyebrow">Email</p>
-          <h1 class="view-title" tabindex="-1">That link didn't work</h1>
-          <p class="lede">You can ask for a new one after you sign in.</p>
-        </header>
-        <p class="status is-error" role="alert">${esc(message)}</p>
-        <button class="btn btn--primary btn--block" type="button" data-auth="${next}">${label}</button>
-      </div>`;
-  },
-
-  // ?delete=TOKEN: the emailed link's last check. Nothing happens until Delete my account is pressed.
-  delete: ({ phase = "ask", message = "" } = {}) => {
-    if (phase === "failed") {
-      const how = state.user ? "You can ask for a new one in Settings, under Your data." : "Sign in to ask for a new one in Settings, under Your data.";
-      return `
-        <div class="auth-screen">
-          <header class="auth-head">
-            <p class="eyebrow">Account</p>
-            <h1 class="view-title" tabindex="-1">That link didn't work</h1>
-            <p class="lede">Delete links work for 1 hour and only once. ${how}</p>
-          </header>
-          <p class="status is-error" role="alert">${esc(message)}</p>
-          <button class="btn btn--primary btn--block" type="button" data-auth="${state.user ? "app" : "signin"}">${state.user ? "Continue" : "Sign in"}</button>
-        </div>`;
-    }
-    return `
-      <div class="auth-screen">
-        <header class="auth-head">
-          <p class="eyebrow">Account</p>
-          <h1 class="view-title" tabindex="-1">Delete your account?</h1>
-          <p class="lede">This is the last step. Everything in the account goes with it, and it can't be undone.</p>
-        </header>
-        <div class="card delete-what">
-          <p class="eyebrow">What goes</p>
-          <ul class="delete-what__list">
-            <li>Every meal you logged and its photo</li>
-            <li>Your goal, dining halls, favorite foods and settings</li>
-            <li>Your sign-in. The email can sign up again.</li>
-          </ul>
-        </div>
-        <p class="form-error" role="alert" hidden></p>
-        <div class="delete-choice">
-          <button class="btn btn--danger btn--block" type="button" data-action="confirm-delete">${icon("trash")}Delete my account</button>
-          <button class="btn btn--secondary btn--block" type="button" data-auth="${state.user ? "app" : "welcome"}">Keep it</button>
-        </div>
-      </div>`;
-  },
-};
 
 // ---- forms
 
@@ -3525,20 +2678,9 @@ function clearFieldError(input) {
   }
 }
 
-function setFormAlert(form, message, action = null) {
+function setFormAlert(form, message) {
   const alert = $(".form-error", form);
-  const text = document.createElement("span");
-  text.className = "form-error__text";
-  text.textContent = message;
-  alert.replaceChildren(text);
-  if (action) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "link-btn";
-    button.dataset.auth = action.to;
-    button.textContent = action.label;
-    alert.append(button);
-  }
+  alert.textContent = message;
   alert.hidden = false;
 }
 
@@ -3551,300 +2693,29 @@ function clearFormErrors(form) {
   }
 }
 
-/** A server error goes next to its field when it names one (detail.field), else above the button. */
-function showFormError(form, err) {
-  if (err.signedOut || !form.isConnected) return;
-  const input = err.field ? form.elements.namedItem(err.field) : null;
-  if (input instanceof HTMLInputElement && !input.classList.contains("visually-hidden")) {
-    setFieldError(input, err.message);
-    input.focus();
-    return;
-  }
-  setFormAlert(form, err.message, err.field === "token" ? { to: "forgot", label: "Get a new link" } : null);
-}
-
-const EMAIL_SHAPE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-
-/** Quick checks before a round trip; the server checks again and has the last word. */
-function checkForm(form, kind, data) {
-  const problems = [];
-  if ("email" in data && kind !== "change-password") {
-    const email = data.email.trim();
-    if (!email) problems.push(["email", "Enter your email address."]);
-    else if (!EMAIL_SHAPE.test(email)) problems.push(["email", "Enter a valid email address."]);
-  }
-  if (kind === "signin" && !data.password) problems.push(["password", "Enter your password."]);
-  if ((kind === "register" || kind === "reset") && [...data.password].length < 8) {
-    problems.push(["password", "Use at least 8 characters for your password."]);
-  }
-  if (kind === "change-password") {
-    if (!data.current_password) problems.push(["current_password", "Enter your current password."]);
-    if ([...data.new_password].length < 8) problems.push(["new_password", "Use at least 8 characters for your password."]);
-  }
-  for (const [name, message] of problems) setFieldError(form.elements.namedItem(name), message);
-  if (problems.length) form.elements.namedItem(problems[0][0]).focus();
-  return !problems.length;
-}
-
-async function submitAccountForm(form) {
-  const kind = form.dataset.form;
-  const button = $('button[type="submit"]', form);
-  // A disabled button stops taps and Enter, but not a script's requestSubmit(): one request at a time.
-  if (button?.getAttribute("aria-busy") === "true") return;
-  const data = Object.fromEntries(new FormData(form));
-  clearFormErrors(form);
-  if (!checkForm(form, kind, data)) return;
-  const post = (path, body, options = {}) => api(path, { method: "POST", ...jsonBody(body), ...options });
-  await withBusy(button, async () => {
-    try {
-      if (kind === "signin") {
-        const { user } = await post("/api/auth/login", { email: data.email.trim(), password: data.password });
-        const name = firstName(user);
-        await signedIn(user, name ? `Welcome back, ${name}.` : "Welcome back.");
-      } else if (kind === "register") {
-        const name = data.name.trim();
-        const reply = await post("/api/auth/register", { email: data.email.trim(), password: data.password, ...(name ? { name } : {}) });
-        state.demoVerifyUrl = reply.demo_verify_url ?? null;
-        await signedIn(reply.user, "Account created.");
-      } else if (kind === "forgot") {
-        await post("/api/auth/forgot-password", { email: data.email.trim() });
-        showAuth("forgot", { email: data.email.trim(), sent: true });
-      } else if (kind === "reset") {
-        const { user } = await post("/api/auth/reset-password", { token: state.resetToken ?? "", password: data.password });
-        forgetResetToken();
-        await signedIn(user, "New password saved. You're signed in.");
-      } else if (kind === "change-password") {
-        const body = { current_password: data.current_password, new_password: data.new_password };
-        const { user } = await post("/api/auth/change-password", body, { session: true });
-        if (user) state.user = user;
-        closeAccount({ message: "Password changed." });
-      }
-    } catch (err) {
-      if (kind === "reset" && err.field === "token") forgetResetToken(); // a dead link doesn't come back on refresh
-      showFormError(form, err);
-    }
-  });
-}
-
-function togglePassword(button) {
-  const input = document.getElementById(button.getAttribute("aria-controls"));
-  if (!input) return;
-  const show = input.type === "password";
-  input.type = show ? "text" : "password";
-  $(".pw__label", button).textContent = show ? "Hide" : "Show";
-}
-
-els.auth.addEventListener("click", (event) => {
-  const nav = event.target.closest("[data-auth]");
-  if (nav) {
-    if (nav.dataset.auth === "app") return enterHome({ focus: true });
-    return goAuth(nav.dataset.auth); // the email typed so far comes along (authDraft)
-  }
-  const toggle = event.target.closest('[data-action="toggle-password"]');
-  if (toggle) togglePassword(toggle);
-});
-
-els.auth.addEventListener("submit", (event) => {
-  event.preventDefault();
-  submitAccountForm(event.target);
-});
-
-els.auth.addEventListener("input", (event) => {
-  clearFieldError(event.target);
-  const { name, value } = event.target;
-  if (name === "email" || name === "name") setAuthDraft({ [name]: value.trim() });
-});
-
-/** ?verify=TOKEN: confirm, then carry on into the app when it was the signed-in account's own link. */
-async function confirmEmail(token) {
-  showAuth("verify", { phase: "pending" });
-  try {
-    const { user } = await api("/api/auth/verify-email", { method: "POST", ...jsonBody({ token }) });
-    if (state.user && user?.id === state.user.id) {
-      state.user = user;
-      enterHome();
-      toast("Email confirmed. Thanks.");
-      return;
-    }
-    // Signed out, or another account's link: a screen that says whose email it was.
-    showAuth("verify", { phase: "done", confirmed: user?.email ?? "" });
-  } catch (err) {
-    showAuth("verify", { phase: "failed", message: err.message });
-  }
-}
-
-// ---- the unconfirmed-email banner and its actions
-
-/** Seconds until Resend link works again: a minute after each send, or what a 429 said. */
-const resendWait = () => Math.max(0, Math.ceil((state.resendUntil - Date.now()) / 1000));
-const resendLabel = (wait = resendWait()) =>
-  !wait ? "Resend link" : wait <= 60 ? `Resend in ${wait}s` : `Resend in ${Math.ceil(wait / 60)} min`;
-let resendTimer = null;
-
-/** Counts the Resend buttons down in place (aria-disabled, so focus stays on the button). */
-function startResendCooldown(seconds) {
-  state.resendUntil = Date.now() + seconds * 1000;
-  clearInterval(resendTimer);
-  const tick = () => {
-    const wait = resendWait();
-    for (const button of $$('[data-action="resend"]')) {
-      $(".resend__label", button).textContent = resendLabel(wait);
-      if (wait) button.setAttribute("aria-disabled", "true");
-      else button.removeAttribute("aria-disabled");
-    }
-    if (!wait) {
-      clearInterval(resendTimer);
-      resendTimer = null;
-    }
-  };
-  tick();
-  resendTimer = setInterval(tick, 1000);
-}
-
-function confirmActionsHtml() {
-  const wait = resendWait();
-  return `
-    <button class="btn btn--soft" type="button" data-action="resend"${wait ? ' aria-disabled="true"' : ""}>${icon("mail")}<span class="resend__label">${resendLabel(wait)}</span></button>
-    ${state.demoVerifyUrl ? `<button class="btn btn--primary" type="button" data-action="demo-verify">${icon("check")}Confirm now (demo)</button>` : ""}`;
-}
-
-function renderBanner() {
-  const user = state.user;
-  const notice = state.prefsError ? prefsNoticeHtml(state.prefsError) : "";
-  if (!state.authRequired || !user || user.email_verified) {
-    els.banner.innerHTML = notice;
-    return;
-  }
-  const email = `<strong>${esc(user.email)}</strong>`;
-  els.banner.innerHTML = `
-    <div class="banner" data-confirm="banner">
-      <span class="banner__icon" aria-hidden="true">${icon("mail")}</span>
-      <div class="banner__text">
-        <p class="banner__title">Confirm your email</p>
-        <p>${emailSending() ? `We sent a link to ${email}. Open it to confirm.` : `${NOT_SWITCHED_ON}, so the link for ${email} may not arrive.`}</p>
-      </div>
-      <div class="banner__actions">${confirmActionsHtml()}</div>
-      <p class="banner__status" role="status"></p>
-    </div>${notice}`;
-}
-
-/** Redraw both places that offer the confirm actions, keeping focus on the same action. */
-function refreshConfirmUi(where, action) {
-  renderBanner();
-  if (els.account.open) renderAccountBody();
-  if (!where) return null;
-  const box = $(`[data-confirm="${where}"]`);
-  $(`[data-action="${action}"]`, box ?? document)?.focus({ preventScroll: true });
-  return box;
-}
-
-function confirmStatus(box, message, { error = false } = {}) {
-  const out = box && $(".banner__status", box);
-  if (!out) return;
-  out.textContent = message;
-  out.classList.toggle("is-error", error);
-}
-
-const RESEND_COOLDOWN = 60;
-
-async function resendLink(button) {
-  const where = button.closest("[data-confirm]")?.dataset.confirm;
-  if (resendWait()) return; // aria-disabled: still focusable, so say nothing new and send nothing
-  await withBusy(button, async () => {
-    try {
-      const reply = await api("/api/auth/resend-verification", { method: "POST", session: true });
-      if (reply?.demo_verify_url) state.demoVerifyUrl = reply.demo_verify_url;
-      startResendCooldown(RESEND_COOLDOWN);
-      const said = emailSending()
-        ? "New link sent. It works for 24 hours."
-        : state.demoVerifyUrl
-          ? `New link ready. ${NOT_SWITCHED_ON}, so use Confirm now (demo).`
-          : `New link made. ${NOT_SWITCHED_ON}, so it may not arrive.`;
-      confirmStatus(refreshConfirmUi(where, "resend"), said);
-    } catch (err) {
-      if (err.signedOut) return;
-      if (err.status === 409) {
-        await refreshUser();
-        refreshConfirmUi();
-        (els.account.open ? els.accountTitle : els.todayTitle).focus({ preventScroll: true });
-        toast("Your email is already confirmed.");
-        return;
-      }
-      if (err.status === 429 && err.retryAfter) startResendCooldown(err.retryAfter);
-      confirmStatus(button.closest("[data-confirm]"), err.message, { error: true });
-    }
-  });
-}
-
-/** Demo only: the server put the link in its reply, so confirm with its token right here. */
-async function demoVerify(button) {
-  let token = null;
-  try {
-    token = new URL(state.demoVerifyUrl, location.origin).searchParams.get("verify");
-  } catch {
-    token = null;
-  }
-  if (!token) return;
-  const box = button.closest("[data-confirm]");
-  await withBusy(button, async () => {
-    try {
-      const { user } = await api("/api/auth/verify-email", { method: "POST", ...jsonBody({ token }) });
-      if (state.user && user?.id === state.user.id) state.user = user;
-      else await refreshUser();
-      state.demoVerifyUrl = null;
-      updateAccountUi();
-      refreshConfirmUi();
-      (els.account.open ? els.accountTitle : els.todayTitle).focus({ preventScroll: true });
-      toast("Email confirmed. Thanks.");
-    } catch (err) {
-      if (!err.signedOut) confirmStatus(box, err.message, { error: true });
-    }
-  });
-}
-
-// ---- the account sheet
-// With the preferences layer it grows into Settings (see renderSettingsBody); without it, the
-// account sheet is as it was.
-
-function renderAccountBody() {
-  if (state.prefsOn) return renderSettingsBody();
-  const user = state.user;
-  if (!user) return;
-  els.accountKicker.textContent = "Account";
-  els.accountTitle.textContent = user.name || "Your account";
-  els.accountIntro.textContent = "Your sign-in, your password and how the app looks.";
-  els.accountIntro.hidden = false;
-  els.accountBody.innerHTML = `
-    ${accountIdHtml(user)}
-    ${appearanceSectionHtml()}
-    ${passwordSectionHtml(user)}
-    <p class="account__status status" role="status"></p>
-    <button class="btn btn--soft btn--block" type="button" data-install${installable() ? "" : " hidden"}>${icon("home")}Add to Home Screen</button>
-    <button class="btn btn--secondary btn--block" type="button" data-action="sign-out">${icon("logout")}Log out</button>
-    ${dataSectionHtml(user)}`;
-}
+// ---- the Settings sheet (#account): see renderSettingsBody
 
 /** Add to Home Screen (install.js) shows only where it can work: after the browser offers an
     install, or in Safari on an iPhone or iPad, and never once the app runs from the Home Screen. */
 const installable = () => Boolean(window.MealScholarInstall?.available?.());
 
-/** Opens the account sheet. `opener` is the control that asked for it (or its click event), so
-    closing the sheet can hand focus back there instead of always to the avatar in the bar. */
+/** Opens Settings. `opener` is the control that asked for it (or its click event), so closing the
+    sheet can hand focus back there instead of always to the gear in the bar. */
 function openAccount(opener) {
-  if (!state.user && !(state.prefsOn && state.localUser)) return;
+  if (!state.prefsOn) return;
   accountOpener =
     opener instanceof Element ? opener : opener?.currentTarget instanceof Element ? opener.currentTarget : document.activeElement;
   clearTimeout(accountTimer);
   els.account.classList.remove("is-closing");
   els.account.style.transform = "";
   accountMessage = "";
-  renderAccountBody();
+  renderSettingsBody();
   document.documentElement.classList.add("has-sheet");
   if (!els.account.open) els.account.showModal();
   els.accountTitle.focus();
 }
 
-/** Settings, scrolled to one of its sections (goals, dining, diet, favorites, alerts). */
+/** Settings, scrolled to one of its sections (goals, display, data). */
 function openSettings(section, opener) {
   openAccount(opener);
   if (!section || !els.account.open) return;
@@ -3924,22 +2795,6 @@ els.account.addEventListener("click", (event) => {
   switch (button?.dataset.action) {
     case "close-account":
       return closeAccount();
-    case "toggle-password":
-      return togglePassword(button);
-    case "show-change-password": {
-      const form = $("#change-password", els.account);
-      const open = form.hidden;
-      form.hidden = !open;
-      button.setAttribute("aria-expanded", String(open));
-      if (open) $("input:not(.visually-hidden)", form).focus();
-      return;
-    }
-    case "resend":
-      return resendLink(button);
-    case "demo-verify":
-      return demoVerify(button);
-    case "sign-out":
-      return signOut(button);
     case "ask-data":
       return askData(button);
     case "cancel-data":
@@ -3948,48 +2803,21 @@ els.account.addEventListener("click", (event) => {
       return clearHistory(button);
     case "erase-data":
       return eraseData(button);
-    case "delete-email":
-    case "delete-resend":
-      return requestDeleteLink(button);
-    case "demo-delete":
-      return demoDelete();
   }
-  prefsClick(event); // the Settings widgets (chips, favorites, nearest hall)
+  prefsClick(event); // the Settings widgets (goal choices)
 });
 
 els.account.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (event.target.dataset.form === "goals") return saveGoalsForm(event.target);
-  if (event.target.dataset.form === "delete-account") return deleteAccount(event.target);
-  submitAccountForm(event.target);
+  if (event.target.dataset.form === "goals") saveGoalsForm(event.target);
 });
 
-els.account.addEventListener("input", (event) => {
-  clearFieldError(event.target);
-  prefsInput(event);
-});
+els.account.addEventListener("input", (event) => clearFieldError(event.target));
 els.account.addEventListener("change", prefsChange);
 
 els.accountButton.addEventListener("click", openAccount);
 
-/** Log out, from Settings or the sidebar. A failure shows in Settings when it's open, else as a toast. */
-async function signOut(button) {
-  await withBusy(button, async () => {
-    try {
-      await api("/api/auth/logout", { method: "POST" });
-    } catch (err) {
-      if (err.status !== 401) {
-        if (els.account.open) setStatus(err.message, { error: true, target: $(".account__status", els.account) });
-        else toast(`Couldn't log out. ${err.message}`);
-        return;
-      }
-    }
-    leaveAccount("welcome"); // the sheet closes at once, so focus can land on Welcome
-    toast("You're logged out.");
-  });
-}
-
-// ---- Your data: clear history, delete everything, delete the account
+// ---- Your data: clear history, delete everything
 
 function askData(button) {
   const panel = document.getElementById(button.dataset.ask);
@@ -4026,7 +2854,7 @@ async function clearHistory(button) {
     try {
       erased = await api("/api/meals", { method: "DELETE" });
     } catch (err) {
-      if (!err.signedOut) setStatus(err.message, { error: true, target: dataStatus() });
+      setStatus(err.message, { error: true, target: dataStatus() });
       return;
     }
     closeDataAsk(button.closest(".data-ask"));
@@ -4046,177 +2874,12 @@ async function eraseData(button) {
     try {
       await api("/api/me", { method: "DELETE" });
     } catch (err) {
-      if (!err.signedOut) setStatus(err.message, { error: true, target: dataStatus() });
+      setStatus(err.message, { error: true, target: dataStatus() });
       return;
     }
     startOver("Your data is deleted. MealScholar starts fresh.");
   });
 }
-
-async function deleteAccount(form) {
-  const button = $('button[type="submit"]', form);
-  if (button?.getAttribute("aria-busy") === "true") return;
-  clearFormErrors(form);
-  const input = form.elements.namedItem("password");
-  if (!input.value) {
-    setFieldError(input, "Enter your password.");
-    input.focus();
-    return;
-  }
-  await withBusy(button, async () => {
-    try {
-      await api("/api/auth/delete-account", { method: "POST", ...jsonBody({ password: input.value }), session: true });
-    } catch (err) {
-      showFormError(form, err);
-      return;
-    }
-    startOver("Your account and its data are deleted.");
-  });
-}
-
-// ---- Delete account by email: Settings asks the server for a link (POST /api/auth/delete-account,
-// nothing deleted yet); opening it shows the Delete your account? screen, whose button posts the
-// link's token to /api/auth/confirm-delete. Without email sending, the password form above stays.
-
-/** Seconds until the delete panel's Resend works again: a minute after each send, or what a 429 said. */
-const deleteWait = () => Math.max(0, Math.ceil((state.deleteUntil - Date.now()) / 1000));
-let deleteTimer = null;
-
-/** Counts the delete panel's Resend down in place, like the confirm-email banner's. */
-function startDeleteCooldown(seconds) {
-  state.deleteUntil = Date.now() + seconds * 1000;
-  clearInterval(deleteTimer);
-  const tick = () => {
-    const wait = deleteWait();
-    for (const button of $$('[data-action="delete-resend"]')) {
-      $(".resend__label", button).textContent = resendLabel(wait);
-      if (wait) button.setAttribute("aria-disabled", "true");
-      else button.removeAttribute("aria-disabled");
-    }
-    if (!wait) {
-      clearInterval(deleteTimer);
-      deleteTimer = null;
-    }
-  };
-  tick();
-  deleteTimer = setInterval(tick, 1000);
-}
-
-/** The Delete account panel once the link is out. */
-function deleteSentHtml(email) {
-  const wait = deleteWait();
-  return `
-    <p class="delete__ask data-ask__sent" tabindex="-1">Check your email: we sent a link to <strong>${esc(email)}</strong>. Opening it deletes the account. It works for 1 hour.</p>
-    <div class="delete__row">
-      <button class="btn btn--soft" type="button" data-action="delete-resend"${wait ? ' aria-disabled="true"' : ""}>${icon("mail")}<span class="resend__label">${resendLabel(wait)}</span></button>
-      ${state.deleteDemoUrl ? `<button class="btn btn--primary" type="button" data-action="demo-delete">${icon("trash")}Open the link (demo)</button>` : ""}
-      <button class="btn btn--secondary" type="button" data-action="cancel-data">Close</button>
-    </div>
-    <p class="banner__status" role="status"></p>`;
-}
-
-/** Open the panel in its sent state. Focus goes to its text (read first) or stays on Resend. */
-function showDeletePanel(panel, email, { resend = false } = {}) {
-  for (const other of $$(".data-ask", els.account)) if (other !== panel) closeDataAsk(other);
-  panel.innerHTML = deleteSentHtml(email);
-  panel.hidden = false;
-  $('[data-ask="data-delete-account"]', els.account)?.setAttribute("aria-expanded", "true");
-  setStatus("", { target: dataStatus() });
-  if (resend) return $('[data-action="delete-resend"]', panel)?.focus({ preventScroll: true });
-  $(".data-ask__sent", panel)?.focus({ preventScroll: true });
-  panel.scrollIntoView({ block: "nearest", behavior: reducedMotion.matches ? "auto" : "smooth" });
-}
-
-/** Delete account (the row button) or Resend (in the panel): asks the server to email the link. */
-async function requestDeleteLink(button) {
-  const panel = document.getElementById("data-delete-account");
-  const user = state.user;
-  if (!panel || !user) return;
-  const resend = button.dataset.action === "delete-resend";
-  if (resend && deleteWait()) return; // aria-disabled: still focusable, so send nothing
-  if (!resend && (deleteWait() || !panel.hidden)) {
-    // A link went out this minute: the panel says so, instead of sending another.
-    if (panel.hidden) return showDeletePanel(panel, user.email);
-    return $('[data-action="delete-resend"]', panel)?.focus();
-  }
-  await withBusy(button, async () => {
-    let reply;
-    try {
-      reply = await api("/api/auth/delete-account", { method: "POST", session: true });
-    } catch (err) {
-      if (err.signedOut) return;
-      if (resend) {
-        if (err.status === 429 && err.retryAfter) startDeleteCooldown(err.retryAfter);
-        deleteStatus(panel, err.message, { error: true });
-      } else {
-        setStatus(err.message, { error: true, target: dataStatus() });
-      }
-      return;
-    }
-    state.deleteDemoUrl = reply?.demo_delete_url ?? null;
-    startDeleteCooldown(RESEND_COOLDOWN);
-    showDeletePanel(panel, user.email, { resend });
-    if (resend) deleteStatus(panel, "New link sent. It works for 1 hour.");
-  });
-}
-
-/** The panel's status line sits under its buttons, at the foot of the sheet: bring it into view. */
-function deleteStatus(panel, message, options = {}) {
-  confirmStatus(panel, message, options);
-  $(".banner__status", panel)?.scrollIntoView({ block: "nearest", behavior: reducedMotion.matches ? "auto" : "smooth" });
-}
-
-/** Demo only: the server put the delete link in its reply, so show the screen it opens right here. */
-function demoDelete() {
-  let token = null;
-  try {
-    token = new URL(state.deleteDemoUrl, location.origin).searchParams.get("delete");
-  } catch {
-    token = null;
-  }
-  if (!token) return;
-  state.deleteToken = token;
-  showAuth("delete");
-  syncHistory();
-}
-
-/** Delete my account on the ?delete= screen: the token says whose account goes. */
-async function confirmDelete(button) {
-  const screen = button.closest(".auth-screen");
-  const token = state.deleteToken ?? "";
-  await withBusy(button, async () => {
-    try {
-      await api("/api/auth/confirm-delete", { method: "POST", ...jsonBody({ token }) });
-    } catch (err) {
-      if (err.field === "token") {
-        state.deleteToken = null; // a dead link doesn't come back
-        showAuth("delete", { phase: "failed", message: err.message });
-      } else if (screen?.isConnected) {
-        setFormAlert(screen, err.message);
-      }
-      return;
-    }
-    state.deleteToken = null;
-    if (state.user) {
-      // Signed in as someone else? That link took another account, and this sign-in goes on.
-      try {
-        const { user } = await api("/api/auth/me");
-        state.user = user;
-        enterApp({ focus: true });
-        toast(`That link deleted another account. You're still signed in as ${user.email}.`);
-        return;
-      } catch {
-        // 401: it was this account
-      }
-    }
-    startOver("Your account and its data are deleted.");
-  });
-}
-
-els.auth.addEventListener("click", (event) => {
-  const button = event.target.closest('[data-action="confirm-delete"]');
-  if (button) confirmDelete(button);
-});
 
 /** Reload from the top, so nothing from before stays in memory; the message shows after. */
 function startOver(message) {
@@ -4241,19 +2904,16 @@ function showStartOverNotice() {
 
 // --------------------------------------------------------------- history
 // Every screen above the home screen has a history entry, so the Android back gesture and the
-// browser's back button step back through the app instead of leaving it. Home is Today; Menu and
-// Week sit one step above it (#menu, #week), and so do a logged meal and the capture screen (a
-// photo being read, then its result). Switching tabs replaces that step, so back from any tab is
-// Today, and back from Today leaves the app. Signed out,
-// home is Welcome and Sign in, Create account and Forgot password stack on it ({ auth: [...] }
-// entries). Signing in or out folds the old stack back into one home entry, so back from the
-// dashboard never returns to a sign-in form.
+// browser's back button step back through the app instead of leaving it. Home is Today; Week sits
+// one step above it (#week), and so do a logged meal and the capture screen (a photo being read,
+// then its result). Switching tabs replaces that step, so back from any tab is Today, and back
+// from Today leaves the app.
 
 // "install" belongs to install.js (the Home Screen sheet); it never stays in the address bar.
 const _bootParams = new URLSearchParams(location.search);
 _bootParams.delete("install");
 let bootRoute = null; // the tab a #hash asked for at start, taken by enterApp
-let baseUrl = location.pathname + (_bootParams.toString() ? "?" + _bootParams.toString() : "");
+const baseUrl = location.pathname + (_bootParams.toString() ? "?" + _bootParams.toString() : "");
 
 /** The screens stacked above Today right now. */
 function layers() {
@@ -4262,21 +2922,11 @@ function layers() {
   return [state.view];
 }
 
-const HASH = { menu: "#menu", week: "#week" };
+const HASH = { week: "#week" };
 const urlFor = (list) => `${baseUrl}${HASH[list[0]] ?? ""}`;
-/** The tab a #hash names, if any: #today, #menu or #week. */
+/** The tab a #hash names, if any: #today or #week. */
 const hashView = () => (isTab(location.hash.slice(1)) ? location.hash.slice(1) : null);
 const entryLayers = (entry) => (Array.isArray(entry?.layers) ? entry.layers : []);
-const isAuthEntry = (entry) => Array.isArray(entry?.auth);
-
-/** What the screen on show needs above its home entry: app layers, or signed-out account screens.
-    A signed-in person on a link screen (Set a new password, Confirm email) stays on the app's home. */
-function wantedHistory() {
-  if (document.body.dataset.screen === "auth" && !state.user) return { kind: "auth", path: state.authPath };
-  return { kind: "app", path: layers() };
-}
-
-const entryFor = (kind, path) => (kind === "auth" ? { auth: path } : { layers: path });
 
 let historyTask = Promise.resolve();
 let ownTraversal = null;
@@ -4287,20 +2937,14 @@ function syncHistory() {
 }
 
 async function stepHistory() {
-  const want = wantedHistory();
-  const entry = history.state;
-  const kind = isAuthEntry(entry) ? "auth" : "app";
-  const have = kind === "auth" ? entry.auth : entryLayers(entry);
+  const want = layers();
+  const have = entryLayers(history.state);
   let same = 0;
-  if (kind === want.kind) {
-    while (same < want.path.length && same < have.length && want.path[same] === have[same]) same += 1;
-  }
+  while (same < want.length && same < have.length && want[same] === have[same]) same += 1;
   if (have.length > same) await traverse(same - have.length);
-  // Signed in or out: the home entry changes hands.
-  if (kind !== want.kind) history.replaceState(entryFor(want.kind, []), "", baseUrl);
-  for (let i = same; i < want.path.length; i += 1) {
-    const list = want.path.slice(0, i + 1);
-    history.pushState(entryFor(want.kind, list), "", want.kind === "app" ? urlFor(list) : baseUrl);
+  for (let i = same; i < want.length; i += 1) {
+    const list = want.slice(0, i + 1);
+    history.pushState({ layers: list }, "", urlFor(list));
   }
 }
 
@@ -4320,19 +2964,11 @@ function traverse(delta) {
 
 window.addEventListener("popstate", (event) => {
   if (ownTraversal) return ownTraversal();
-  const screen = document.body.dataset.screen;
+  if (document.body.dataset.screen !== "app") return;
   const entry = event.state;
-  if (screen === "auth") {
-    if (state.user) return enterHome({ focus: true }); // back from a link screen while signed in
-    if (isAuthEntry(entry)) return showAuthPath(entry.auth);
-    return syncHistory(); // an entry from before signing out: stay on the account screens
-  }
-  if (screen !== "app") return;
-  if (isAuthEntry(entry)) return syncHistory(); // a sign-in form from before signing in: stay in the app
-  // A #today, #menu or #week typed into the address bar (or a link to one): a new entry with no state.
+  // A #today or #week typed into the address bar (or a link to one): a new entry with no state.
   if (!entry && hashView()) {
-    const view = canShow(hashView()) ? hashView() : "today";
-    applyLayers(view === "today" ? [] : [view]);
+    applyLayers(hashView() === "today" ? [] : [hashView()]);
     return;
   }
   applyLayers(entryLayers(entry));
@@ -4348,7 +2984,7 @@ function applyLayers(target) {
   if (dropped("meal")) closeSlot("today", { focus: true });
   const top = target[0];
   // The capture screen only comes back while it has something to show.
-  const view = top === "analyze" ? (state.analyzing || state.slots.analyze ? "analyze" : "today") : canShow(top) ? top : "today";
+  const view = top === "analyze" ? (state.analyzing || state.slots.analyze ? "analyze" : "today") : isTab(top) ? top : "today";
   setView(view);
   const now = layers();
   if (now.join() !== target.join()) history.replaceState({ layers: now }, "", urlFor(now));
@@ -4358,14 +2994,9 @@ function applyLayers(target) {
 }
 
 // ------------------------------------------------------------ preferences
-// Goals, dining halls, diet and allergens, favorite dishes and alerts (prefs.py), and the campus
-// menus (dining.py). All of it exists only once GET /api/me/prefs answers 200: for the signed-in
-// account, or for the server's one "local" user when sign-in is optional. A server without those
-// routes (404) leaves the app as it was; one without the menus (503 from /api/dining/*) keeps the
-// goals and hides the dining parts.
+// The daily goal, the nutrient goals and the ranges switch (prefs.py). The server keeps them for
+// the one person using this MealScholar; GET /api/me/prefs always answers.
 
-const DIETS = ["Halal", "Local", "Plant Based", "Vegetarian"];
-const ALLERGENS = ["Corn", "Milk", "Soy", "Gluten", "Wheat", "Eggs", "Sesame", "Fish", "Tree Nuts", "Shellfish", "Peanuts"];
 const GOAL_FIELDS = [
   ["protein_g", "Protein", "g", 400],
   ["carbs_g", "Carbs", "g", 1000],
@@ -4376,9 +3007,7 @@ const GOAL_FIELDS = [
 ];
 const REFERENCE_KCAL = 2000;
 const [GOAL_MIN, GOAL_MAX] = [500, 6000];
-const MAX_FAVORITES = 50;
 
-const diningOn = () => state.prefsOn && Boolean(state.dining);
 /** A calorie goal is set: the dashboard shows what's left against it. */
 const goalsMode = () => state.prefsOn && Number.isFinite(state.prefs?.calorie_goal) && state.prefs.calorie_goal > 0;
 const nutrientGoal = (key) => {
@@ -4386,35 +3015,18 @@ const nutrientGoal = (key) => {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 };
 const needsOnboarding = () => state.prefsOn && state.prefs?.onboarded !== true;
-const hallNameById = (id) => state.dining?.locations?.find((l) => l.id === id)?.name ?? null;
 
-/** A dish name without case, width, extra spaces or curly quotes, as prefs.dish_key does. */
-const dishKey = (name) =>
-  String(name)
-    .normalize("NFKC")
-    .replace(/[‘’]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/[\u2013\u2014]/g, "-")
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .join(" ");
-
-/** The preferences, or null when this server keeps none (a 404: today's live server). A server
-    or network failure is tried once more; if it still fails, the app runs without them and the
-    dashboard says so, with a way to try again (see prefsNoticeHtml). */
+/** The preferences. A server or network failure is tried once more; if it still fails, the app
+    runs without them and the dashboard says so, with a way to try again (see prefsNoticeHtml). */
 async function fetchPrefs() {
-  const epoch = state.epoch;
   state.prefsError = null;
   for (let attempt = 0; ; attempt += 1) {
     try {
-      const prefs = await api("/api/me/prefs", { session: state.authRequired });
+      const prefs = await api("/api/me/prefs");
       return prefs && typeof prefs === "object" && !Array.isArray(prefs) ? normalizePrefs(prefs) : null;
     } catch (err) {
-      if (epoch !== state.epoch || err.signedOut || err.status === 404 || err.status === 401) return null;
       if (attempt === 0 && (err.status === 0 || err.status >= 500)) {
         await new Promise((resolve) => setTimeout(resolve, 800));
-        if (epoch !== state.epoch) return null;
         continue;
       }
       state.prefsError = err;
@@ -4430,7 +3042,7 @@ function prefsNoticeHtml(err) {
       <span class="banner__icon" aria-hidden="true">${icon("gear")}</span>
       <div class="banner__text">
         <p class="banner__title">Couldn't load your settings</p>
-        <p>${esc(err.message)} Your goals, dining halls and alerts are off for now.</p>
+        <p>${esc(err.message)} Your goals and display settings are off for now.</p>
       </div>
       <div class="banner__actions"><button class="btn btn--soft" type="button" data-action="retry-prefs">Try again</button></div>
     </div>`;
@@ -4439,20 +3051,14 @@ function prefsNoticeHtml(err) {
 /** Try again from the notice. When the preferences arrive, the app starts over with them on,
     by way of the set-up steps if they were never finished. */
 async function retryPrefs(button) {
-  const epoch = state.epoch;
   await withBusy(button, async () => {
     const prefs = await fetchPrefs();
-    if (epoch !== state.epoch) return;
     if (!prefs) {
       renderBanner(); // the notice again, with the new reason
       $('[data-action="retry-prefs"]', els.banner)?.focus({ preventScroll: true });
       return;
     }
-    if (!state.authRequired) state.localUser = true;
     enablePrefs(prefs);
-    await loadDining();
-    if (epoch !== state.epoch) return;
-    loadAlerts();
     renderBanner(); // the notice goes
     if (needsOnboarding()) startOnboarding();
     else enterApp({ focus: true });
@@ -4461,17 +3067,11 @@ async function retryPrefs(button) {
 
 /** Only the shapes the app relies on; the server has the last word on every save. */
 function normalizePrefs(prefs) {
-  const list = (value) => (Array.isArray(value) ? value : []);
   const goals = prefs.nutrient_goals && typeof prefs.nutrient_goals === "object" ? prefs.nutrient_goals : {};
   return {
     onboarded: prefs.onboarded === true,
     calorie_goal: Number.isInteger(prefs.calorie_goal) ? prefs.calorie_goal : null,
     nutrient_goals: goals,
-    dining_halls: list(prefs.dining_halls).filter(Number.isInteger),
-    diets: list(prefs.diets).filter((d) => typeof d === "string"),
-    avoid_allergens: list(prefs.avoid_allergens).filter((a) => typeof a === "string"),
-    favorites: list(prefs.favorites).filter((f) => f && typeof f.name === "string"),
-    notify: { in_app: prefs.notify?.in_app !== false, email: prefs.notify?.email === true },
     show_ranges: prefs.show_ranges === true,
     updated_at: typeof prefs.updated_at === "string" ? prefs.updated_at : null,
   };
@@ -4486,1151 +3086,30 @@ function enablePrefs(prefs) {
   updatePrefsUi();
 }
 
-/** Preferences, then the menus and alerts, for the account that just signed in. */
+/** The preferences, at the start. */
 async function setupPrefs() {
   const prefs = await fetchPrefs();
   if (!prefs) return false;
   enablePrefs(prefs);
-  await loadDining();
-  loadAlerts();
   return true;
 }
 
-/** The halls with a menu. A failure that may pass (a restart, a blip) is tried once more; if that fails
-    too, or the server has no menus at all, the dining parts stay off. */
-async function loadDining() {
-  const epoch = state.epoch;
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      const locations = await api("/api/dining/locations");
-      if (epoch !== state.epoch) return;
-      const usable = Array.isArray(locations) ? locations.filter((l) => l && Number.isInteger(l.id) && typeof l.name === "string") : [];
-      state.dining = { locations: usable };
-    } catch (err) {
-      if (epoch !== state.epoch) return;
-      if (attempt === 0 && !diningGone(err)) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        if (epoch !== state.epoch) return;
-        continue;
-      }
-      state.dining = false;
-    }
-    break;
-  }
-  updatePrefsUi();
-}
-
-/** dining.py's 503 when the server has no menus at all. Its other 503 ("aren't available right now. Try
-    again in a minute.") passes, so it reads like any other failure: shown where it happened, tried again. */
-const DINING_NOT_CONNECTED = "Dining menus aren't connected.";
-const diningGone = (err) => err?.status === 503 && err.message === DINING_NOT_CONNECTED;
-
-/** The menus went away mid-session (a 503 that says so): the dining parts fold away. */
-function diningLost() {
-  if (!state.dining) return;
-  state.dining = false;
-  state.alerts = [];
-  state.upcoming = null;
-  resetMenus();
-  updatePrefsUi();
-  renderUpcoming();
-  renderMenu();
-}
-
 function updatePrefsUi() {
-  if (state.prefsOn) document.body.dataset.dining = diningOn() ? "on" : "off";
-  else delete document.body.dataset.dining;
   els.plus.hidden = false;
-  updateBell();
-  // The menus went away (or were never there): the Menu tab folds away, and so does its page.
-  if (!diningOn() && state.view === "menu" && document.body.dataset.screen === "app") {
-    setView("today");
-    syncHistory();
-  }
 }
 
 /** PATCH a subset; the reply is the whole document. The parts of the app that use what changed
-    follow: the calorie panel and tiles, the upcoming meal, the bell. */
+    follow: the calorie panel and tiles, the ranges. */
 async function savePrefs(changes) {
-  const epoch = state.epoch;
   const reply = await api("/api/me/prefs", { method: "PATCH", ...jsonBody(changes) });
-  if (epoch !== state.epoch || !state.prefsOn) return reply;
+  if (!state.prefsOn) return reply;
   const changed = Object.keys(changes);
   const touched = (...keys) => keys.some((k) => changed.includes(k));
   state.prefs = normalizePrefs(reply);
   state.prefsVersion += 1;
   if (touched("show_ranges")) redrawRanges();
-  if (document.body.dataset.screen === "app") {
-    if (touched("calorie_goal", "nutrient_goals")) renderDay();
-    if (touched("dining_halls", "favorites", "diets", "avoid_allergens")) {
-      state.upcoming = null;
-      loadUpcoming();
-    }
-    // The Menu tab marks favorites itself; halls, diet and allergens need its menus again.
-    if (touched("dining_halls", "diets", "avoid_allergens")) resetMenus(true);
-    if (state.view === "menu") ensureMenus();
-  }
-  if (touched("favorites", "dining_halls", "notify")) loadAlerts();
-  updateBell();
+  if (document.body.dataset.screen === "app" && touched("calorie_goal", "nutrient_goals")) renderDay();
   return state.prefs;
-}
-
-// ---- alerts: favorites on the menus this week
-
-async function loadAlerts() {
-  if (!diningOn() || !state.prefs?.notify?.in_app || !state.prefs.favorites.length) {
-    state.alerts = [];
-    updateBell();
-    return;
-  }
-  const epoch = state.epoch;
-  try {
-    const alerts = await api("/api/me/alerts?days=7");
-    if (epoch !== state.epoch) return;
-    state.alerts = Array.isArray(alerts) ? alerts.filter((a) => a && typeof a.name === "string") : [];
-  } catch (err) {
-    if (epoch !== state.epoch) return;
-    if (diningGone(err)) return diningLost();
-  }
-  updateBell();
-  if (els.panel.open && els.panel.dataset.kind === "alerts") renderAlertsPanel({ refocus: false });
-}
-
-function updateBell() {
-  const show = document.body.dataset.screen === "app" && diningOn() && Boolean(state.prefs?.notify?.in_app);
-  els.bell.hidden = !show;
-  const n = state.alerts.length;
-  els.bellDot.hidden = !n;
-  const dishes = new Set(state.alerts.map((a) => dishKey(a.name))).size; // an alert is one dish at one hall for one meal
-  const label = dishes ? `Alerts: ${dishes} of your favorites ${dishes === 1 ? "is" : "are"} on the menu this week` : "Alerts";
-  els.bell.setAttribute("aria-label", label);
-  els.railAlerts.hidden = !show;
-  els.railDot.hidden = !n;
-  els.railAlerts.setAttribute("aria-label", label);
-}
-
-// ---- the nearest dining hall
-
-/** The nearest dining commons to the device, with the sentence to show. The coordinates go to this
-    one request and nowhere else; the answer is kept for the dashboard. */
-async function fetchNearest(lat, lon) {
-  const epoch = state.epoch;
-  try {
-    const near = await api(`/api/dining/nearest?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
-    if (epoch !== state.epoch || !Number.isInteger(near?.location?.id) || typeof near.note !== "string") return null;
-    state.nearest = near;
-    return near;
-  } catch (err) {
-    if (diningGone(err)) diningLost();
-    return null;
-  }
-}
-
-/** For the dashboard: the last answer, or a fresh look-up from the device location. */
-async function nearestHall() {
-  if (state.nearest) return state.nearest;
-  try {
-    const [lat, lon] = await devicePosition();
-    return await fetchNearest(lat, lon);
-  } catch {
-    return null;
-  }
-}
-
-/** After a photo with location: the nearest hall under the result, and the side column follows it.
-    The note goes into the card on show, where resultHtml puts it: a re-render would cut the boxes'
-    entrance short and drop keyboard focus. */
-async function noteNearest([lat, lon], slot) {
-  const near = await fetchNearest(lat, lon);
-  if (!near || state.slots.analyze !== slot) return;
-  slot.nearest = near;
-  const body = state.shown === slot && slot.result.items.length ? $(".meal-card__body", els.result) : null;
-  if (body && !$(".nearest-note", body)) body.insertAdjacentHTML("beforeend", nearestNoteHtml(near.note, "result"));
-  state.upcoming = null;
-  loadUpcoming();
-}
-
-/** The server's sentence, with "Change dining hall" as the way to the picker: Settings from the
-    dashboard and a result, the picker itself from inside Settings or the set-up steps. */
-function nearestNoteHtml(note, where) {
-  const text = String(note);
-  const phrase = "Change dining hall";
-  const at = text.indexOf(phrase);
-  const link =
-    where === "picker"
-      ? `<button class="link-btn link-btn--inline" type="button" data-action="focus-picker">${phrase}</button>`
-      : settingsLinkHtml(phrase, "dining");
-  const body = at >= 0 ? `${esc(text.slice(0, at))}${link}${esc(text.slice(at + phrase.length))}` : `${esc(text)} ${link} if this is wrong.`;
-  return `<p class="note nearest-note nearest-note--${where}">${icon("pin")}<span>${body}</span></p>`;
-}
-
-// ---- the upcoming meal (the right column on laptops, a card on phones)
-
-let upcomingSeq = 0;
-let upcomingLoading = 0; // the upcomingSeq of the fetch still on its way, else 0
-const DINING_TTL = 15 * 60_000; // the next meal moves on with the clock: fetch it again after this
-
-/** A next-meal answer still worth showing: under 15 minutes old and not for a day gone by. */
-const freshMeal = (entry) => Boolean(entry) && (entry.pending || (Date.now() - entry.at < DINING_TTL && !(entry.meal?.date < localDate())));
-
-/** Fetch again the next meals on show that have gone stale (see freshMeal): the upcoming meal, and the
-    Menu tab's halls while it's open. On coming back to the page, and once a minute while it's on screen. */
-function refreshDining() {
-  if (!diningOn()) return;
-  if (state.upcoming && !freshMeal(state.upcoming) && !upcomingLoading) loadUpcoming();
-  if (state.view === "menu" && menuHallIds().some((id) => !freshMeal(menus.data.get(id)))) ensureMenus({ refresh: true });
-}
-
-let upcomingShown = null; // what the side card was last drawn from: { entry, sig }
-const upcomingSig = () => `${busyNow.sig}|${state.prefsVersion}|${state.todayKey}`;
-
-/** Draw the side column from what's known, unless it shows that already (a day pick leaves the card,
-    its scroll and its focus alone); fetch it when nothing is, unless that's on its way. */
-function ensureUpcoming() {
-  if (!diningOn()) {
-    els.dashSide.innerHTML = "";
-    return;
-  }
-  if (!freshMeal(state.upcoming)) {
-    if (!upcomingLoading) loadUpcoming();
-  } else if (upcomingShown?.entry !== state.upcoming) renderUpcoming();
-  else if (upcomingShown.sig !== upcomingSig()) redrawUpcoming();
-}
-
-/** Draw the same meal again in place: the list keeps its scroll, and keyboard focus stays on the same dish
-    (or on the list, or the cam line). For a busy reading or a change of settings that keeps the meal. */
-function redrawUpcoming() {
-  const list = $(".dishes", els.dashSide);
-  const top = list?.scrollTop ?? 0;
-  const active = els.dashSide.contains(document.activeElement) ? document.activeElement : null;
-  const dish = active?.closest("[data-dish]")?.dataset.dish;
-  renderUpcoming();
-  const next = $(".dishes", els.dashSide);
-  if (next && top) next.scrollTop = top;
-  if (!active) return;
-  const target = dish != null ? $(`[data-dish="${CSS.escape(dish)}"]`, els.dashSide) : active.matches("[data-cam]") ? $("[data-cam]", els.dashSide) : active === list ? next : null;
-  target?.focus({ preventScroll: true });
-}
-
-/** Fetch the upcoming meal and draw it; a call while one is on its way starts it over. */
-async function loadUpcoming() {
-  if (!diningOn() || document.body.dataset.screen !== "app") return;
-  ensureBusy();
-  const seq = ++upcomingSeq;
-  upcomingLoading = seq;
-  try {
-    await fetchUpcoming(seq);
-  } finally {
-    if (upcomingLoading === seq) upcomingLoading = 0;
-  }
-}
-
-async function fetchUpcoming(seq) {
-  const epoch = state.epoch;
-  const held = els.dashSide.contains(document.activeElement); // the card had keyboard focus (its Try again)
-  if (!state.upcoming) els.dashSide.innerHTML = upcomingSkeletonHtml(); // a refresh keeps the card until the answer
-  let locationId = null;
-  let note = null;
-  if (els.location.checked) {
-    const near = await nearestHall();
-    if (seq !== upcomingSeq || epoch !== state.epoch) return;
-    if (near) {
-      locationId = near.location.id;
-      note = near.note;
-    }
-  }
-  try {
-    const meal = await api(`/api/me/dining/next${locationId ? `?location_id=${encodeURIComponent(locationId)}` : ""}`);
-    if (seq !== upcomingSeq || epoch !== state.epoch) return;
-    // The same answer again (most refreshes): keep it, so the card isn't drawn again.
-    const old = state.upcoming;
-    if (old?.meal && old.locationId === locationId && old.note === note && JSON.stringify(old.meal) === JSON.stringify(meal)) {
-      old.at = Date.now();
-      return;
-    }
-    state.upcoming = { meal, note, locationId, at: Date.now() };
-  } catch (err) {
-    if (seq !== upcomingSeq || epoch !== state.epoch || err.signedOut) return;
-    if (diningGone(err)) return diningLost();
-    state.upcoming = { error: err, note, locationId, at: Date.now() };
-  }
-  const refocus = els.dashSide.contains(document.activeElement) || (held && document.activeElement === document.body);
-  renderUpcoming();
-  // Focus that was in the card goes to the new one: its Try again, or its list.
-  if (refocus) $('[data-action="retry-upcoming"], .dishes', els.dashSide)?.focus({ preventScroll: true });
-}
-
-const upcomingSkeletonHtml = () =>
-  `<div class="card upcoming is-skeleton" aria-hidden="true"><span class="sk sk--eyebrow"></span><span class="sk sk--num"></span><span class="sk sk--line"></span>${'<span class="sk-row"><span class="sk sk--line"></span><span class="sk sk--short"></span></span>'.repeat(4)}</div>`;
-
-function renderUpcoming() {
-  upcomingShown = { entry: state.upcoming, sig: upcomingSig() };
-  if (!diningOn() || !state.upcoming) {
-    els.dashSide.innerHTML = "";
-    return;
-  }
-  const { meal, note, error, locationId } = state.upcoming;
-  const hall = meal?.location?.name ?? hallNameById(locationId ?? state.prefs.dining_halls[0]) ?? "Your dining hall";
-  const head = `
-    <div class="upcoming__head">
-      <h2 id="upcoming-title" class="eyebrow">Upcoming meal</h2>
-      <p class="upcoming__hall">${esc(hall)}${SEP}${settingsLinkHtml("Change", "dining")}</p>
-      ${busyBadgeHtml(meal?.location?.id ?? locationId ?? state.prefs.dining_halls[0])}
-    </div>`;
-  const nearest = note ? nearestNoteHtml(note, "side") : "";
-  if (error) {
-    els.dashSide.innerHTML = `
-      <section class="card upcoming" aria-labelledby="upcoming-title">
-        ${head}
-        ${nearest}
-        <p class="status is-error" role="alert">${esc(error.message)}</p>
-        <button class="btn btn--soft" type="button" data-action="retry-upcoming">Try again</button>
-      </section>`;
-    return;
-  }
-  const items = Array.isArray(meal.items) ? meal.items.filter((item) => item && typeof item.name === "string") : [];
-  const groups = new Map();
-  for (const item of items) {
-    const category = typeof item.category === "string" && item.category.trim() ? item.category : "Other";
-    if (!groups.has(category)) groups.set(category, []);
-    groups.get(category).push(item);
-  }
-  const avoid = new Set(state.prefs.avoid_allergens);
-  const favorites = favoriteKeys();
-  let n = 0;
-  const rows = [...groups]
-    .map(
-      ([category, list]) => `
-        <li class="dishes__group">
-          <p class="dishes__cat">${esc(category)}</p>
-          <ul class="dishes__list">${list
-            .map((item) => {
-              const ref = `side:${n++}`;
-              dishRefs.set(ref, { item, meal, hall });
-              return dishRowHtml({
-                name: item.name,
-                calories: item.calories,
-                fav: favorites.has(dishKey(item.name)),
-                avoid: item.avoid === true,
-                off: item.fits_diet === false,
-                avoided: Array.isArray(item.allergens) ? item.allergens.filter((a) => avoid.has(a)) : [],
-                kinds: dietKinds(item),
-                ref,
-              });
-            })
-            .join("")}</ul>
-        </li>`
-    )
-    .join("");
-  const when = typeof meal.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(meal.date) ? dayTitle(meal.date) : null;
-  const whenText = when ? (when.title === "Today" ? "Today" : `${when.title}, ${when.sub}`) : "";
-  const legend = dishLegendHtml(items.some((i) => favorites.has(dishKey(i.name))), items.some((i) => i.avoid === true), items.some((i) => i.fits_diet === false), items.map(dietKinds));
-  // "Dinner, usually 4:30 to 9 pm": the label is already the heading, so the hint keeps the hours.
-  const label = typeof meal.label === "string" && meal.label ? meal.label : capitalize(String(meal.meal ?? "Meal"));
-  const hint = typeof meal.starts_hint === "string" ? meal.starts_hint.replace(new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},\\s*`), "") : "";
-  els.dashSide.innerHTML = `
-    <section class="card upcoming" aria-labelledby="upcoming-title">
-      ${head}
-      <p class="upcoming__meal"><strong>${esc(label)}</strong>${whenText ? `<span class="upcoming__when">${SEP}${esc(whenText)}</span>` : ""}</p>
-      ${hint ? `<p class="upcoming__hint">${esc(hint)}</p>` : ""}
-      ${nearest}
-      ${legend}
-      <div class="dishes" tabindex="0" role="region" aria-label="${esc(`${meal.label ?? "Menu"} items`)}">
-        <ul class="dishes__groups">${rows || '<li class="options__empty">Nothing is listed for this meal yet.</li>'}</ul>
-      </div>
-      <p class="upcoming__count"><span>${items.length} item${items.length === 1 ? "" : "s"} on the menu</span><a class="upcoming__more" href="#menu" data-to-menu>Every hall${icon("chevron-right")}</a></p>
-    </section>`;
-}
-
-// ---- What a dish is. Vegetarian, plant based, halal and local are UMass Dining's own labels.
-// Meat and pescatarian aren't labelled, so they come from the name and allergens, and only for a
-// dish UMass doesn't already call vegetarian or plant based.
-
-const KINDS = {
-  meat: ["Meat", "meat"],
-  fish: ["Pescatarian", "fish"],
-  plant: ["Plant based", "sprout"],
-  veg: ["Vegetarian", "leaf"],
-  halal: ["Halal", "halal"],
-  local: ["Local", "local"],
-};
-const MEAT_WORDS =
-  /\b(chicken|beef|pork|turkey|bacon|ham|sausages?|pepperoni|salami|prosciutto|chorizo|lamb|veal|steak|brisket|meatballs?|hot ?dogs?|carnitas|barbacoa|bulgogi|duck|kielbasa|pastrami|ribs|burgers?|cheeseburgers?)\b/i;
-const NOT_MEAT_WORDS = /\b(veggie|vegan|vegetarian|tofu|tempeh|seitan|impossible|beyond|plant|meatless|jackfruit|cauliflower)\b/i;
-const FISH_WORDS =
-  /\b(fish|salmon|tuna|cod|haddock|pollock|tilapia|shrimp|prawns?|crab|lobster|scallops?|clams?|mussels?|calamari|squid|anchov(?:y|ies)|sardines?|trout|halibut|swordfish|seafood|sushi|poke)\b/i;
-
-function dietKinds(item) {
-  const name = String(item?.name ?? "");
-  const diets = new Set(Array.isArray(item?.diets) ? item.diets : []);
-  const allergens = new Set(Array.isArray(item?.allergens) ? item.allergens : []);
-  const kinds = [];
-  if (diets.has("Plant Based")) kinds.push("plant");
-  else if (diets.has("Vegetarian")) kinds.push("veg");
-  else if (MEAT_WORDS.test(name) && !NOT_MEAT_WORDS.test(name)) kinds.push("meat");
-  else if (allergens.has("Fish") || allergens.has("Shellfish") || FISH_WORDS.test(name)) kinds.push("fish");
-  if (diets.has("Halal")) kinds.push("halal");
-  if (diets.has("Local")) kinds.push("local");
-  return kinds;
-}
-
-const kindIconHtml = (kind) => `<span class="kind kind--${kind}" title="${KINDS[kind][0]}">${icon(KINDS[kind][1])}</span>`;
-
-function dishLegendHtml(fav, avoid, off, kinds = []) {
-  const shown = new Set(kinds.flat());
-  const parts = [
-    ...Object.keys(KINDS)
-      .filter((k) => shown.has(k))
-      .map((k) => `<span class="legend__item">${kindIconHtml(k)}${KINDS[k][0].toLowerCase()}</span>`),
-    fav ? `<span class="legend__item legend__item--fav">${icon("star")}favorite</span>` : "",
-    avoid ? `<span class="legend__item">${icon("avoid")}has an allergen you avoid</span>` : "",
-    off ? `<span class="legend__item"><span class="legend__off" aria-hidden="true"></span>not in your diet</span>` : "",
-  ].filter(Boolean);
-  return parts.length ? `<p class="legend">${parts.join("")}</p>` : "";
-}
-
-/** One dish. With `ref` it's a button that opens the dish's sheet (its facts and the favorite toggle). */
-function dishRowHtml({ name, calories, fav, avoid, off, avoided, kinds = [], ref = null }) {
-  const kcal = typeof calories === "number" && Number.isFinite(calories) ? `${nf0.format(calories)} kcal` : "";
-  const cls = `dish${fav ? " is-fav" : ""}${avoid ? " is-avoid" : ""}${off ? " is-off" : ""}${ref ? " has-btn" : ""}`;
-  const inner = `
-      <span class="dish__marks" aria-hidden="true">${fav ? icon("star") : ""}${avoid ? icon("avoid") : ""}</span>
-      <span class="dish__text">
-        <span class="dish__name">${esc(name)}${kinds.length ? `<span class="dish__kinds" aria-hidden="true">${kinds.map(kindIconHtml).join("")}</span>` : ""}</span>${kinds.length ? `<span class="visually-hidden">, ${kinds.map((k) => KINDS[k][0].toLowerCase()).join(", ")}</span>` : ""}${fav ? '<span class="visually-hidden">, a favorite</span>' : ""}
-        ${avoid ? `<span class="dish__warn">${SEP}Has ${esc(avoided.length ? avoided.join(", ") : "an allergen you avoid")}</span>` : ""}
-        ${off ? `<span class="dish__off">${SEP}Not in your diet</span>` : ""}
-      </span>
-      ${kcal ? `<span class="dish__kcal">${SEP}${esc(kcal)}</span>` : '<span class="dish__kcal"></span>'}`;
-  if (!ref) return `<li class="${cls}">${inner}</li>`;
-  return `<li class="${cls}"><button class="dish__btn" type="button" data-dish="${esc(ref)}" aria-haspopup="dialog">${inner}</button></li>`;
-}
-
-// ---- the Menu tab: the next meal at each dining hall the person chose
-// One GET /api/me/dining/next per hall (it takes one location_id), each kept until the halls, the
-// diet or the allergens change. Chips at the top pick the hall; the pick is remembered on this
-// device. With location on, the nearest dining commons comes first.
-
-const MENU_HALL_KEY = "mealscholar:menu-hall";
-const DEFAULT_HALL = 0; // no hall chosen: the server's default hall (no location_id)
-const menus = {
-  data: new Map(), // hall id -> { meal } | { error } | { pending: true }, with `at`: when it came
-  seq: 0,
-  loading: new Set(), // hall ids whose next meal is on its way
-  day: null, // null: today, the next meal; else another day's YYYY-MM-DD, every meal it lists
-  days: new Map(), // `${hall id}|${day}` -> { menu } | { error } | { pending: true }
-  meal: null, // the meal key on show on another day (breakfast, lunch...), kept from day to day
-  note: "", // why the day changed by itself on a hall switch
-};
-const dishRefs = new Map(); // a dish button's data-dish -> { item, meal, hall }
-
-const favoriteKeys = () => new Set((state.prefs?.favorites ?? []).map((f) => dishKey(f.name)));
-
-/** `keepDay`: the settings changed, so stay on the day on show. */
-function resetMenus(keepDay = false) {
-  menus.seq += 1;
-  menus.data.clear();
-  menus.loading = new Set(); // answers still on their way are for the old settings: dropped (see menus.seq)
-  menus.days.clear();
-  menus.note = "";
-  if (!keepDay) {
-    menus.day = null;
-    menus.meal = null;
-  }
-}
-
-/** The halls on the Menu tab, in chip order. */
-function menuHallIds() {
-  const ids = [...(state.prefs?.dining_halls ?? [])];
-  const near = els.location.checked ? state.nearest?.location?.id : null;
-  if (Number.isInteger(near)) {
-    const at = ids.indexOf(near);
-    if (at >= 0) ids.splice(at, 1);
-    ids.unshift(near);
-  }
-  return ids.length ? ids : [DEFAULT_HALL];
-}
-
-function pickedHall(ids = menuHallIds()) {
-  let saved = null;
-  try {
-    saved = Number(localStorage.getItem(MENU_HALL_KEY));
-  } catch {}
-  return ids.includes(saved) ? saved : ids[0];
-}
-
-function pickHall(id) {
-  try {
-    localStorage.setItem(MENU_HALL_KEY, String(id));
-  } catch {}
-}
-
-const hallLabel = (id) => menus.data.get(id)?.meal?.location?.name ?? (id === DEFAULT_HALL ? "Dining hall" : hallNameById(id) ?? `Hall ${id}`);
-
-// ---- How busy each hall is, from its live cam (GET /api/dining/busy; the cams/ sampler)
-
-const busyNow = { halls: new Map(), at: 0, pending: null, off: false, sig: "" };
-const BUSY_TTL = 60_000;
-const BUSY_TEXT = { quiet: "Quiet now", moderate: "Getting busy", busy: "Busy now" };
-
-/** Fetch the readings when they are over a minute old. Redraws only when a level or count changed. */
-function ensureBusy() {
-  if (busyNow.off || busyNow.pending || Date.now() - busyNow.at < BUSY_TTL || !diningOn()) return;
-  busyNow.pending = api("/api/dining/busy", { session: false })
-    .then((reply) => {
-      const halls = new Map((Array.isArray(reply?.halls) ? reply.halls : []).map((h) => [Number(h.location_id), h]));
-      busyNow.halls = halls;
-      busyNow.at = Date.now();
-      const sig = JSON.stringify([...halls.values()].map((h) => [h.location_id, h.level, h.people, Boolean(camClip(h))]));
-      if (sig === busyNow.sig) return;
-      busyNow.sig = sig;
-      if (document.body.dataset.screen !== "app") return;
-      if (state.view === "menu") renderMenu();
-      if (state.upcoming && !state.upcoming.error) redrawUpcoming();
-    })
-    .catch((err) => {
-      busyNow.at = Date.now();
-      // No hall cams on this server; any other failure (a passing 503 too) is tried again in a minute.
-      if (err.status === 404 || (err.status === 503 && err.message === "Hall cams aren't connected on this server.")) busyNow.off = true;
-    })
-    .finally(() => {
-      busyNow.pending = null;
-    });
-}
-
-setInterval(() => {
-  if (document.hidden || document.body.dataset.screen !== "app") return;
-  ensureBusy();
-  refreshDining(); // a page left open moves on to the next meal by itself
-}, BUSY_TTL);
-
-const busyHall = (id) => {
-  const hall = busyNow.halls.get(Number(id));
-  return hall && BUSY_TEXT[hall.level] ? hall : null;
-};
-
-const minsAgo = (iso) => {
-  const mins = Math.round((Date.now() - Date.parse(iso)) / 60_000);
-  return Number.isFinite(mins) ? (mins < 1 ? "just now" : `${mins} min ago`) : "";
-};
-
-/** The hall's boxed clip from the cams sampler, when the server links one (it does for 15 minutes). */
-const camClip = (hall) =>
-  typeof hall?.clip_url === "string" && hall.clip_url.startsWith("/api/dining/cams/")
-    ? {
-        clip: serverUrl(hall.clip_url),
-        poster: typeof hall.poster_url === "string" && hall.poster_url.startsWith("/api/dining/cams/") ? serverUrl(hall.poster_url) : "",
-        at: typeof hall.clip_at === "string" ? hall.clip_at : hall.updated_at,
-        live: typeof hall.live_url === "string" && hall.live_url.startsWith("https://www.youtube.com/watch?v=") ? hall.live_url : "",
-      }
-    : null;
-
-/** "Quiet now · 8 people in view · 2 min ago", from the hall's live cam. With a clip it's a button that
-    opens the cam with the model's boxes. */
-function busyBadgeHtml(id) {
-  const hall = busyHall(id);
-  if (!hall) return "";
-  const people = Number.isFinite(hall.people) ? `${hall.people} ${hall.people === 1 ? "person" : "people"} in view` : "";
-  const meta = [people, minsAgo(hall.updated_at)].filter(Boolean).join(" · ");
-  const cam = camClip(hall);
-  // The chevron rides inside the last words so it never wraps onto a line of its own.
-  const chev = cam ? `<span class="visually-hidden">. See the hall cam</span><span class="busy__chev" aria-hidden="true">${icon("chevron-right")}</span>` : "";
-  const inner = `<span class="busy__dot" aria-hidden="true"></span><span class="busy__level">${BUSY_TEXT[hall.level]}${meta ? "" : chev}</span>${meta ? `<span class="busy__meta">${SEP}<span aria-hidden="true">· </span>${meta}${chev}</span>` : ""}`;
-  if (!cam) return `<p class="busy busy--${hall.level}" title="From the hall's live cam">${inner}</p>`;
-  return `
-    <button class="busy busy--${hall.level} busy--cam" type="button" data-cam="${esc(hall.location_id)}" aria-haspopup="dialog">${inner}</button>`;
-}
-
-/** The hall cam's last 16 seconds with a green box on each person the model counted, in the panel sheet. */
-function openCam(button) {
-  const hall = busyHall(button.dataset.cam);
-  const cam = camClip(hall);
-  if (!cam) return;
-  const name = hallLabel(Number(hall.location_id)) || hall.name;
-  const ago = minsAgo(cam.at);
-  const still = reducedMotion.matches; // no autoplay: the poster, with controls to play it
-  button.focus({ preventScroll: true }); // so closing the sheet comes back here (Safari doesn't focus on click)
-  openPanel({
-    kicker: "Hall cam",
-    title: `${name} right now`,
-    intro: `From the hall's live cam, ${ago || "a few minutes ago"}. Each green box is a person the model counted.`,
-    kind: "cam",
-    html: `
-      <figure class="cam">
-        <div class="cam__frame">
-          <video class="cam__video" src="${esc(cam.clip)}"${cam.poster ? ` poster="${esc(cam.poster)}"` : ""} muted loop playsinline ${still ? "controls preload=\"none\"" : "autoplay preload=\"auto\""} aria-label="${esc(`${name}'s dining room from the hall cam, with a green box on each person counted`)}"></video>
-        </div>
-        <figcaption class="cam__caption"><span class="busy busy--${hall.level}"><span class="busy__dot" aria-hidden="true"></span><span class="busy__level">${BUSY_TEXT[hall.level]}</span><span class="busy__meta"><span aria-hidden="true">· </span>${esc(hall.people)} ${hall.people === 1 ? "person" : "people"} in view</span></span></figcaption>
-      </figure>
-      ${cam.live ? `<a class="btn btn--soft cam__live" href="${esc(cam.live)}" target="_blank" rel="noopener">Watch the live cam${icon("arrow")}<span class="visually-hidden"> (opens YouTube in a new tab)</span></a>` : ""}
-      <p class="note cam__note">It’s UMass Dining’s own public live stream: MealScholar only counts the people in view, identifies no one, and replaces each clip every few minutes.</p>`,
-  });
-  els.panel.dataset.cam = String(hall.location_id);
-  const video = $(".cam__video", els.panelBody);
-  if (!video) return;
-  video.muted = true;
-  video.addEventListener("error", () => {
-    video.closest(".cam")?.classList.add("is-missing");
-    video.removeAttribute("autoplay");
-    video.controls = false;
-  });
-  // A blocked autoplay (Low Power Mode) gets a play button; a clip that won't load shows its poster and a note.
-  if (!still) video.play?.()?.catch?.(() => !video.error && (video.controls = true));
-}
-
-document.addEventListener("click", (event) => {
-  const button = event.target.closest?.("[data-cam]");
-  if (button && !button.closest("dialog")) openCam(button);
-});
-
-/** Draw the tab from what's known and fetch what isn't, or what has gone stale (see freshMeal): every
-    hall's next meal, side by side. A stale menu stays on screen until its new answer replaces it.
-    `refresh`: a refresh in the background, so the tab is drawn again only for an answer that changed. */
-async function ensureMenus({ refresh = false } = {}) {
-  if (document.body.dataset.screen !== "app" || !diningOn()) return;
-  ensureBusy();
-  const epoch = state.epoch;
-  // With location on, find the nearest hall first (once), so it leads the chips. The device's position can
-  // take seconds, or never come: past 1.5 s the menus load without it, and it joins the chips when it lands.
-  if (els.location.checked && !state.nearest && !refresh) {
-    renderMenu({ reveal: true });
-    const lookup = nearestHall();
-    const late = await Promise.race([lookup.then(() => false), new Promise((resolve) => setTimeout(resolve, 1500, true))]);
-    if (epoch !== state.epoch) return;
-    if (late) lookup.then((near) => near && epoch === state.epoch && state.view === "menu" && ensureMenus());
-  }
-  const seq = menus.seq;
-  const loading = menus.loading;
-  const ids = menuHallIds();
-  const wanted = ids.filter((id) => !loading.has(id) && !freshMeal(menus.data.get(id)));
-  const missing = wanted.filter((id) => !menus.data.has(id));
-  for (const id of wanted) loading.add(id);
-  for (const id of missing) menus.data.set(id, { pending: true });
-  if (!refresh || missing.length) renderMenu({ reveal: !refresh });
-  ensureMenuDay();
-  await Promise.all(
-    wanted.map(async (id) => {
-      let entry;
-      try {
-        const meal = await api(`/api/me/dining/next${id === DEFAULT_HALL ? "" : `?location_id=${encodeURIComponent(id)}`}`);
-        entry = meal && Array.isArray(meal.items) ? { meal } : { error: new Error("That menu came back in a shape this app can't read.") };
-      } catch (err) {
-        if (err.signedOut) return;
-        if (diningGone(err)) return diningLost();
-        entry = { error: err };
-      } finally {
-        loading.delete(id);
-      }
-      if (epoch !== state.epoch || seq !== menus.seq) return;
-      // The same answer again (most refreshes): keep it, so nothing is drawn again.
-      const old = menus.data.get(id);
-      if (old?.meal && entry.meal && JSON.stringify(old.meal) === JSON.stringify(entry.meal)) {
-        old.at = Date.now();
-        return;
-      }
-      menus.data.set(id, { ...entry, at: Date.now() });
-      renderMenu();
-    })
-  );
-  ensureMenuDay(); // with no hall chosen, the server's default hall is known only now
-}
-
-const menuSaid = { hall: undefined, due: false }; // the hall on show, and whether a switch to it is yet to be said
-
-/** `reveal`: the tab just opened, so the picked hall's chip comes into the chip row's view. */
-function renderMenu({ reveal = false } = {}) {
-  if (!diningOn()) {
-    els.menuHalls.innerHTML = "";
-    els.menuActions.innerHTML = "";
-    els.menuBody.innerHTML = "";
-    els.menuDays.hidden = true;
-    return;
-  }
-  const ids = menuHallIds();
-  const pick = pickedHall(ids);
-  const near = els.location.checked ? state.nearest?.location?.id : null;
-  const focusedHall = document.activeElement?.closest?.("[data-hall]")?.dataset.hall ?? null;
-  const focusedDish = document.activeElement?.closest?.("[data-dish]")?.dataset.dish ?? null;
-  const focusedMeal = document.activeElement?.matches?.("[data-meal-pick]") ? document.activeElement.value : null;
-  const inBody = els.menuBody.contains(document.activeElement) ? document.activeElement : null;
-  const focusedCam = inBody?.closest("[data-cam]")?.dataset.cam ?? null; // the busy line
-  const focusedLink = inBody?.closest(".nearest-note [data-action]")?.dataset.action ?? null; // "Change dining hall"
-  // The chip row keeps its scroll. Not read as the tab opens: hidden, the row lost it, and reading it then
-  // would lay the old menu out once more for nothing.
-  const chipScroll = reveal ? 0 : $(".halls-bar__track", els.menuHalls)?.scrollLeft ?? 0;
-  renderMenuDays(pick);
-  const noHalls = !(state.prefs?.dining_halls ?? []).length;
-  els.menuHalls.innerHTML = `
-    <div class="halls-bar__track">
-      ${ids
-        .map(
-          (id) => `
-        <button class="hall-chip" type="button" data-hall="${id}" aria-pressed="${id === pick}">
-          ${id === near ? `<span class="hall-chip__near">${icon("pin")}<span class="visually-hidden">Nearest: </span></span>` : ""}<span>${esc(hallLabel(id))}</span>${busyHall(id) ? `<span class="busy__dot busy--${busyHall(id).level}" aria-hidden="true"></span><span class="visually-hidden">, ${BUSY_TEXT[busyHall(id).level].toLowerCase()}</span>` : ""}
-        </button>`
-        )
-        .join("")}
-    </div>`;
-  const actionLabel = noHalls ? "Choose halls" : "Edit halls";
-  if (els.menuActions.textContent.trim() !== actionLabel) {
-    els.menuActions.innerHTML = `<button class="btn btn--secondary intro-btn" type="button" data-action="settings" data-section="dining" aria-haspopup="dialog">${icon(noHalls ? "plus" : "gear")}<span>${actionLabel}</span></button>`;
-  }
-  let entry;
-  let body;
-  if (menus.day) {
-    const hall = menuDayHall(pick);
-    entry = hall == null ? null : menus.days.get(`${hall}|${menus.day}`);
-    body = !entry || entry.pending ? menuSkeletonHtml() : entry.error ? menuErrorHtml(pick, entry.error, "retry-menu-day") : menuDayHtml(hall, entry.menu);
-    const label = menuDayLabel(menus.day);
-    els.menuSub.textContent = `${/^(Tomorrow|Yesterday)$/.test(label) ? label : weekdayLong.format(parseDay(menus.day))}’s meals, dish by dish.`;
-  } else {
-    entry = menus.data.get(pick);
-    body = !entry || entry.pending ? menuSkeletonHtml() : entry.error ? menuErrorHtml(pick, entry.error) : menuCardHtml(pick, entry.meal, near);
-    els.menuSub.textContent = ids.length > 1 ? `The next meal at your ${ids.length} dining halls, dish by dish.` : "The next meal at your dining hall, dish by dish.";
-  }
-  els.menuBody.setAttribute("aria-busy", String(!entry || Boolean(entry.pending)));
-  els.menuBody.innerHTML = `${menus.note ? `<p class="menu-note" role="status">${esc(menus.note)}</p>` : ""}${body}`;
-  const tabs = $(".menu-meals", els.menuBody);
-  if (tabs) fitMealTabs(tabs);
-  // A switch to another hall says which hall and meal are on show, once its menu is in. The menu itself isn't
-  // a live region: every redraw (a new busy reading) would read it all out again.
-  if (pick !== menuSaid.hall) {
-    menuSaid.due = menuSaid.hall !== undefined;
-    menuSaid.hall = pick;
-  }
-  const status = $("#menu-status");
-  if (menuSaid.due && entry && !entry.pending && status) {
-    menuSaid.due = false;
-    const meal = $("#menu-meal-title strong", els.menuBody)?.textContent;
-    const n = $$("[data-dish]", els.menuBody).length;
-    if (meal) status.textContent = `${$(".menu-card .eyebrow", els.menuBody)?.textContent ?? hallLabel(pick)}: ${meal}, ${n} item${n === 1 ? "" : "s"}.`;
-  }
-  const track = $(".halls-bar__track", els.menuHalls);
-  if (chipScroll) track.scrollLeft = chipScroll;
-  const chip = reveal && track.scrollWidth > track.clientWidth ? $('[aria-pressed="true"]', track) : null;
-  if (chip) {
-    // Scroll the chip row only (the page stays put) until the picked chip clears the row's padding.
-    const row = track.getBoundingClientRect();
-    const box = chip.getBoundingClientRect();
-    const { paddingLeft, paddingRight } = getComputedStyle(track);
-    const under = box.left - (row.left + parseFloat(paddingLeft));
-    const over = box.right - (row.right - parseFloat(paddingRight));
-    if (under < 0) track.scrollLeft += under;
-    else if (over > 0) track.scrollLeft += Math.min(over, under);
-  }
-  if (focusedHall != null) $(`[data-hall="${CSS.escape(focusedHall)}"]`, els.menuHalls)?.focus({ preventScroll: true });
-  else if (focusedDish != null) $(`[data-dish="${CSS.escape(focusedDish)}"]`, els.menuBody)?.focus({ preventScroll: true });
-  else if (focusedMeal != null) $(`[data-meal-pick][value="${CSS.escape(focusedMeal)}"]`, els.menuBody)?.focus({ preventScroll: true });
-  else if (focusedCam != null) $(`[data-cam="${CSS.escape(focusedCam)}"]`, els.menuBody)?.focus({ preventScroll: true });
-  else if (focusedLink != null) $(`.nearest-note [data-action="${CSS.escape(focusedLink)}"]`, els.menuBody)?.focus({ preventScroll: true });
-}
-
-// ---- the Menu tab's day arrows: another day's whole menu at the picked hall
-// Today is the next meal, as above. Another day is GET /api/dining/menu for the picked hall: every meal it
-// lists, one at a time, flagged here the way the server flags the next meal (dining.flag_items). The arrows
-// step through the hall's dates with a menu (GET /api/dining/locations lists them from a week back), and
-// each day fetched is kept until the settings change.
-
-const todayKeyNow = () => state.todayKey ?? localDate();
-
-/** The hall whose days the arrows step through: the picked one, or the server's default once it's known. */
-function menuDayHall(pick = pickedHall()) {
-  if (pick !== DEFAULT_HALL) return pick;
-  const id = menus.data.get(DEFAULT_HALL)?.meal?.location?.id;
-  return Number.isInteger(id) ? id : null;
-}
-
-/** The days the arrows can reach at `hall`, in order: its dates with a menu, and today (the next meal). */
-function menuDaysAt(hall) {
-  const today = todayKeyNow();
-  const loc = hall == null ? null : state.dining?.locations?.find((l) => l.id === hall);
-  const dates = Array.isArray(loc?.dates) ? loc.dates.filter((d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) : [];
-  return [...new Set([...dates, today])].sort();
-}
-
-function menuDayLabel(key) {
-  const today = todayKeyNow();
-  if (key === today) return "Today";
-  if (key === shiftDay(today, 1)) return "Tomorrow";
-  if (key === shiftDay(today, -1)) return "Yesterday";
-  return dayFormat.format(parseDay(key));
-}
-
-/** The day reachable at `days` closest to `key`; on a tie, the later one. */
-function nearestMenuDay(days, key) {
-  const at = parseDay(key).getTime();
-  let best = null;
-  for (const day of days) {
-    const gap = Math.abs(Math.round((parseDay(day).getTime() - at) / 864e5));
-    if (best == null || gap <= best.gap) best = { day, gap };
-  }
-  return best?.day ?? todayKeyNow();
-}
-
-function renderMenuDays(pick) {
-  const today = todayKeyNow();
-  if (menus.day && menus.day === today) menus.day = null; // past midnight, the day on show became today
-  const key = menus.day ?? today;
-  const days = menuDaysAt(menuDayHall(pick));
-  const prev = days.filter((d) => d < key).at(-1) ?? "";
-  const next = days.find((d) => d > key) ?? "";
-  const active = document.activeElement;
-  els.menuDays.hidden = false;
-  const label = menuDayLabel(key);
-  if (els.menuDay.textContent !== label) els.menuDay.textContent = label; // it's live: say it only when it changes
-  els.menuPrev.disabled = !prev;
-  els.menuNext.disabled = !next;
-  els.menuPrev.dataset.target = prev;
-  els.menuNext.dataset.target = next;
-  els.menuPrev.setAttribute("aria-label", prev ? `Previous day, ${longDay.format(parseDay(prev))}` : "Previous day");
-  els.menuNext.setAttribute("aria-label", next ? `Next day, ${longDay.format(parseDay(next))}` : "Next day");
-  // An arrow that just went disabled hands its focus on, as the week arrows do.
-  if (active === els.menuPrev && !prev) (next ? els.menuNext : els.menuTitle).focus({ preventScroll: true });
-  if (active === els.menuNext && !next) (prev ? els.menuPrev : els.menuTitle).focus({ preventScroll: true });
-}
-
-/** Show `key`'s menu; today is the next meal. */
-function goMenuDay(key) {
-  const today = todayKeyNow();
-  if (!menus.day && !menus.meal) menus.meal = menus.data.get(pickedHall())?.meal?.meal ?? null; // the meal on show today
-  menus.day = !key || key === today ? null : key;
-  menus.note = "";
-  renderMenu();
-  replayEntrance(els.menuBody);
-  ensureMenuDay();
-}
-
-/** Fetch the day on show at the picked hall, unless it's kept. */
-async function ensureMenuDay() {
-  const day = menus.day;
-  const hall = menuDayHall();
-  if (!day || hall == null || document.body.dataset.screen !== "app" || !diningOn()) return;
-  const key = `${hall}|${day}`;
-  if (menus.days.has(key)) return;
-  const epoch = state.epoch;
-  const seq = menus.seq;
-  menus.days.set(key, { pending: true });
-  renderMenu();
-  let entry;
-  try {
-    const menu = await api(`/api/dining/menu?location_id=${encodeURIComponent(hall)}&date=${day}`);
-    entry = menu && Array.isArray(menu.meals) ? { menu } : { error: new Error("That menu came back in a shape this app can't read.") };
-  } catch (err) {
-    if (err.signedOut) return menus.days.delete(key);
-    if (diningGone(err)) return diningLost();
-    entry = err.status === 404 ? { menu: { date: day, meals: [] } } : { error: err };
-  }
-  if (epoch !== state.epoch || seq !== menus.seq) return;
-  menus.days.set(key, entry);
-  renderMenu();
-}
-
-/** Phones: a day's meal tabs scroll sideways when they don't fit (Worcester lists five). Keep the one on
-    show in view, since every redraw starts the row at its start, and fade the side that has more. */
-function fitMealTabs(row) {
-  const on = $(".menu-meals__input:checked + .menu-meals__opt", row);
-  if (on && row.scrollWidth > row.clientWidth) row.scrollLeft = Math.max(0, on.offsetLeft + on.offsetWidth / 2 - row.clientWidth / 2);
-  markMealTabs(row);
-}
-
-function markMealTabs(row) {
-  const max = row.scrollWidth - row.clientWidth;
-  row.classList.toggle("has-more-start", max > 1 && row.scrollLeft > 1);
-  row.classList.toggle("has-more-end", max > 1 && row.scrollLeft < max - 1);
-}
-
-els.menuBody.addEventListener("scroll", (event) => event.target.classList?.contains("menu-meals") && markMealTabs(event.target), { capture: true, passive: true });
-// Tabbing into the meals lands on the one on show; bring its tab fully into view.
-els.menuBody.addEventListener("focusin", (event) => {
-  if (event.target.matches?.("[data-meal-pick]")) fitMealTabs(event.target.closest(".menu-meals"));
-});
-addEventListener("resize", () => {
-  const row = $(".menu-meals", els.menuBody);
-  if (row) markMealTabs(row);
-}, { passive: true });
-
-/** A dish on another day's menu with the flags the server puts on the next meal's (dining.flag_items). */
-function flagDish(item, category) {
-  const allergens = Array.isArray(item.allergens) ? item.allergens : [];
-  const diets = Array.isArray(item.diets) ? item.diets : [];
-  const avoid = state.prefs?.avoid_allergens ?? [];
-  return {
-    ...item,
-    category,
-    avoid: allergens.some((a) => avoid.includes(a)),
-    fits_diet: (state.prefs?.diets ?? []).every((d) => diets.includes(d)),
-  };
-}
-
-/** Another day at `hall`: its meals in serving order as tabs, and the one on show. */
-function menuDayHtml(hall, menu) {
-  const meals = (Array.isArray(menu.meals) ? menu.meals : []).filter((m) => m && typeof m.meal === "string" && Array.isArray(m.categories));
-  const day = typeof menu.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(menu.date) ? menu.date : menus.day;
-  const name = menu.location?.name ?? hallLabel(hall);
-  if (!meals.length) {
-    return `
-      <div class="card menu-card menu-card--empty">
-        <header class="menu-card__head">
-          <p class="eyebrow">${esc(name)}</p>
-          <h2 class="menu-card__meal"><strong>No menu</strong><span class="menu-card__when">${SEP}${esc(longDay.format(parseDay(day)))}</span></h2>
-          <p class="menu-card__hint">${day < todayKeyNow() ? "Nothing was posted for that day." : "Nothing is posted for that day yet."}</p>
-        </header>
-      </div>`;
-  }
-  const shown = meals.find((m) => m.meal === menus.meal) ?? meals[0];
-  const label = (m) => (typeof m.label === "string" && m.label ? m.label : capitalize(m.meal.replace(/_/g, " ")));
-  const items = shown.categories.flatMap((c) =>
-    (Array.isArray(c?.items) ? c.items : []).filter((item) => item && typeof item.name === "string").map((item) => flagDish(item, c.category))
-  );
-  const tabs =
-    meals.length > 1
-      ? `
-    <div class="menu-meals" role="radiogroup" aria-label="Meals">${meals
-      .map(
-        (m) =>
-          `<input id="menu-meal-${esc(m.meal)}" class="menu-meals__input visually-hidden" type="radio" name="menu-meal" value="${esc(m.meal)}" data-meal-pick${m === shown ? " checked" : ""}><label class="menu-meals__opt" for="menu-meal-${esc(m.meal)}">${esc(label(m))}</label>`
-      )
-      .join("")}</div>`
-      : "";
-  return `${tabs}${menuCardHtml(hall, { location: { id: hall, name }, date: day, meal: shown.meal, label: label(shown), items }, null, { day: true })}`;
-}
-
-const menuSkeletonHtml = () => `
-  <div class="card menu-card is-skeleton" aria-hidden="true">
-    <span class="sk sk--eyebrow"></span><span class="sk sk--num"></span><span class="sk sk--line"></span>
-    ${'<span class="sk-row"><span class="sk sk--line"></span><span class="sk sk--short"></span></span>'.repeat(6)}
-  </div>
-  <p class="visually-hidden" role="status">Loading the menu</p>`;
-
-function menuErrorHtml(id, err, action = "retry-menu") {
-  return `
-    <div class="card menu-card menu-card--error">
-      <p class="eyebrow">${esc(hallLabel(id))}</p>
-      <p class="status is-error" role="alert">${esc(err.message)}</p>
-      <button class="btn btn--secondary" type="button" data-action="${action}" data-hall-retry="${id}">Try again</button>
-    </div>`;
-}
-
-/** `day`: another day's meal, so no word on how busy the hall is now or how near it is. */
-function menuCardHtml(id, meal, near, { day = false } = {}) {
-  const items = meal.items.filter((item) => item && typeof item.name === "string");
-  const favorites = favoriteKeys();
-  const avoid = new Set(state.prefs.avoid_allergens);
-  const groups = new Map();
-  for (const item of items) {
-    const category = typeof item.category === "string" && item.category.trim() ? item.category : "Other";
-    if (!groups.has(category)) groups.set(category, []);
-    groups.get(category).push(item);
-  }
-  const hall = meal.location?.name ?? hallLabel(id);
-  const label = typeof meal.label === "string" && meal.label ? meal.label : capitalize(String(meal.meal ?? "Meal"));
-  const when = typeof meal.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(meal.date) ? dayTitle(meal.date) : null;
-  const whenText = when ? (when.title === "Today" ? "Today" : `${when.title}, ${when.sub}`) : "";
-  const hint = typeof meal.starts_hint === "string" ? meal.starts_hint.replace(new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},\\s*`), "") : "";
-  let n = 0;
-  const cats = [...groups]
-    .map(
-      ([category, list], i) => `
-      <section class="menu-cat" aria-labelledby="menu-cat-${i}">
-        <h3 id="menu-cat-${i}" class="dishes__cat">${esc(category)}</h3>
-        <ul class="dishes__list">${list
-          .map((item) => {
-            const ref = `menu:${id}:${n++}`;
-            dishRefs.set(ref, { item, meal, hall });
-            const allergens = Array.isArray(item.allergens) ? item.allergens : [];
-            return dishRowHtml({
-              name: item.name,
-              calories: item.calories,
-              fav: favorites.has(dishKey(item.name)),
-              avoid: item.avoid === true,
-              off: item.fits_diet === false,
-              avoided: allergens.filter((a) => avoid.has(a)),
-              kinds: dietKinds(item),
-              ref,
-            });
-          })
-          .join("")}</ul>
-      </section>`
-    )
-    .join("");
-  const legend = dishLegendHtml(items.some((i) => favorites.has(dishKey(i.name))), items.some((i) => i.avoid === true), items.some((i) => i.fits_diet === false), items.map(dietKinds));
-  const nearNote = !day && id === near && state.nearest?.note ? nearestNoteHtml(state.nearest.note, "side") : "";
-  return `
-    <article class="card menu-card" aria-labelledby="menu-meal-title">
-      <header class="menu-card__head">
-        <p class="eyebrow">${esc(hall)}</p>
-        ${day ? "" : busyBadgeHtml(meal.location?.id ?? id)}
-        <h2 id="menu-meal-title" class="menu-card__meal" tabindex="-1"><strong>${esc(label)}</strong>${whenText ? `<span class="menu-card__when">${SEP}${esc(whenText)}</span>` : ""}</h2>
-        ${hint ? `<p class="menu-card__hint">${esc(hint)}</p>` : ""}
-        ${nearNote}
-        ${legend}
-      </header>
-      ${items.length ? `<div class="menu-cats">${cats}</div>` : '<p class="options__empty">Nothing is listed for this meal yet.</p>'}
-      <p class="menu-card__foot">${items.length} item${items.length === 1 ? "" : "s"} on the menu. Tap a dish for its nutrition facts.</p>
-    </article>`;
-}
-
-els.menuView.addEventListener("click", (event) => {
-  const chip = event.target.closest("[data-hall]");
-  if (chip) {
-    const id = Number(chip.dataset.hall);
-    if (chip.getAttribute("aria-pressed") === "true") return;
-    pickHall(id);
-    menus.note = "";
-    if (menus.day) {
-      // Keep the day when the hall has a menu that day; else the nearest day it has, and say so.
-      const days = menuDaysAt(menuDayHall(id));
-      if (!days.includes(menus.day)) {
-        const day = nearestMenuDay(days, menus.day);
-        const today = todayKeyNow();
-        menus.note = `${hallLabel(id)} has no menu on ${dayFormat.format(parseDay(menus.day))}. Showing ${day === today ? "today" : dayFormat.format(parseDay(day))}.`;
-        menus.day = day === today ? null : day;
-      }
-    }
-    renderMenu();
-    const body = els.menuBody;
-    replayEntrance(body);
-    ensureMenuDay();
-    return;
-  }
-  const step = event.target.closest("[data-menu-day]");
-  if (step) {
-    if (!step.disabled && step.dataset.target) goMenuDay(step.dataset.target);
-    return;
-  }
-  const dish = event.target.closest("[data-dish]");
-  if (dish) return openDish(dish.dataset.dish, dish);
-  const action = event.target.closest("[data-action]");
-  switch (action?.dataset.action) {
-    case "settings":
-      return openSettings(action.dataset.section, action);
-    case "retry-menu":
-      menus.data.delete(Number(action.dataset.hallRetry));
-      // Focus goes to the new card's heading, or to Try again if it failed again (unless it moved on meanwhile).
-      ensureMenus().then(() => {
-        if (document.activeElement !== document.body && !els.menuBody.contains(document.activeElement)) return;
-        $('[data-action="retry-menu"], #menu-meal-title', els.menuBody)?.focus({ preventScroll: true });
-      });
-      return;
-    case "retry-menu-day":
-      menus.days.delete(`${menuDayHall()}|${menus.day}`);
-      ensureMenuDay().then(() => $('[data-action="retry-menu-day"], [data-meal-pick]:checked, [data-dish]', els.menuBody)?.focus({ preventScroll: true }));
-      return;
-  }
-});
-
-// Another day's meals: the tabs show one at a time, and the meal picked carries to other days.
-els.menuBody.addEventListener("change", (event) => {
-  const input = event.target.closest?.("[data-meal-pick]");
-  if (!input?.checked) return;
-  menus.meal = input.value;
-  renderMenu();
-  $("#menu-body > .menu-card")?.classList.add("is-entering");
-});
-
-// Left and right arrows move between the hall chips, as in a toolbar.
-els.menuHalls.addEventListener("keydown", (event) => {
-  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-  const chips = $$(".hall-chip", els.menuHalls);
-  const at = chips.indexOf(document.activeElement);
-  if (at < 0) return;
-  event.preventDefault();
-  chips[(at + (event.key === "ArrowRight" ? 1 : -1) + chips.length) % chips.length].focus();
-});
-
-// ---- a dish's sheet: its facts as the dining hall lists them, and Add to favorites
-
-const notListed = '<span class="facts__none">Not listed</span>';
-const nfFact = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
-
-function factValue(value, unit) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return notListed;
-  return `${esc(unit === "kcal" ? nf0.format(value) : nfFact.format(value))}<span class="facts__unit"> ${unit}</span>`;
-}
-
-function dishSheetHtml({ item, meal }) {
-  const fav = favoriteKeys().has(dishKey(item.name));
-  const allergens = Array.isArray(item.allergens) ? item.allergens.filter((a) => typeof a === "string") : [];
-  const diets = Array.isArray(item.diets) ? item.diets.filter((d) => typeof d === "string") : [];
-  const avoid = new Set(state.prefs?.avoid_allergens ?? []);
-  const avoided = allergens.filter((a) => avoid.has(a));
-  const tags = [
-    ...dietKinds(item).map((k) => `<span class="tag tag--kind">${kindIconHtml(k)}${KINDS[k][0]}</span>`),
-    item.avoid === true ? `<span class="tag tag--avoid">${icon("avoid")}Has ${esc(avoided.length ? avoided.join(", ") : "an allergen you avoid")}</span>` : "",
-    item.fits_diet === false ? '<span class="tag tag--off">Not in your diet</span>' : "",
-  ].filter(Boolean);
-  const list = (values) => (values.length ? values.map((v) => `<span class="chip">${esc(v)}</span>`).join("") : notListed);
-  const serving = typeof item.serving_size === "string" && item.serving_size.trim() ? esc(item.serving_size) : notListed;
-  return `
-    ${tags.length ? `<p class="dish-sheet__tags">${tags.join("")}</p>` : ""}
-    <div class="dish-sheet__fav">
-      <button class="btn ${fav ? "btn--secondary" : "btn--primary"} btn--block" type="button" data-action="toggle-fav" aria-pressed="${fav}">
-        ${icon("star")}<span>${fav ? "Remove from favorites" : "Add to favorites"}</span>
-      </button>
-      <p class="dish-sheet__status status" role="status" aria-live="polite"></p>
-    </div>
-    <section class="dish-sheet__facts" aria-labelledby="facts-title">
-      <div class="section-head"><h3 id="facts-title" class="eyebrow">Nutrition facts</h3><span class="chip">Per serving</span></div>
-      <dl class="facts">
-        <div class="facts__row facts__row--lead"><dt>Calories</dt><dd>${factValue(item.calories, "kcal")}</dd></div>
-        <div class="facts__row"><dt>Protein</dt><dd>${factValue(item.protein_g, "g")}</dd></div>
-        <div class="facts__row"><dt>Carbs</dt><dd>${factValue(item.carbs_g, "g")}</dd></div>
-        <div class="facts__row"><dt>Fat</dt><dd>${factValue(item.fat_g, "g")}</dd></div>
-        <div class="facts__row facts__row--text"><dt>Serving size</dt><dd>${serving}</dd></div>
-        <div class="facts__row facts__row--chips"><dt>Allergens</dt><dd>${list(allergens)}</dd></div>
-        <div class="facts__row facts__row--chips"><dt>Diet tags</dt><dd>${list(diets)}</dd></div>
-      </dl>
-      <p class="note">As the dining hall lists it for one serving, not an estimate from a photo. A dish with no allergens listed isn't always free of them; ask the dining staff if it matters.</p>
-    </section>`;
-}
-
-function openDish(ref, opener) {
-  const dish = dishRefs.get(ref);
-  if (!dish) return;
-  const label = typeof dish.meal?.label === "string" ? dish.meal.label : "";
-  opener?.focus?.({ preventScroll: true }); // so closing the sheet comes back to this dish
-  openPanel({ kicker: [dish.hall, label].filter(Boolean).join(" · "), title: dish.item.name, html: dishSheetHtml(dish), kind: "dish" });
-  els.panel.dataset.dish = ref;
-}
-
-/** Add the dish to the favorites, or take it off: the whole list goes back in one PATCH, as Settings
-    saves it. Names match the way the server matches them (dish_key), so "Butter chicken" and
-    "Butter Chicken" are one favorite. */
-async function toggleFavorite(button) {
-  const dish = dishRefs.get(els.panel.dataset.dish ?? "");
-  if (!dish || !state.prefs) return;
-  const status = $(".dish-sheet__status", els.panelBody);
-  const key = dishKey(dish.item.name);
-  const current = state.prefs.favorites.map((f) => ({ name: f.name }));
-  const had = current.some((f) => dishKey(f.name) === key);
-  if (!had && current.length >= MAX_FAVORITES) {
-    setStatus(`You can keep up to ${MAX_FAVORITES} favorites. Remove one in Settings first.`, { error: true, target: status });
-    return;
-  }
-  const next = had ? current.filter((f) => dishKey(f.name) !== key) : [...current, { name: dish.item.name }];
-  const epoch = state.epoch;
-  setStatus("", { target: status });
-  await withBusy(button, async () => {
-    try {
-      await savePrefs({ favorites: next });
-    } catch (err) {
-      if (epoch !== state.epoch || err.signedOut || !button.isConnected) return;
-      setStatus(err.message, { error: true, target: status });
-      return;
-    }
-    if (epoch !== state.epoch) return;
-    const fav = favoriteKeys().has(key);
-    if (button.isConnected) {
-      button.setAttribute("aria-pressed", String(fav));
-      button.classList.toggle("btn--primary", !fav);
-      button.classList.toggle("btn--secondary", fav);
-      $("span", button).textContent = fav ? "Remove from favorites" : "Add to favorites";
-      setStatus(fav ? "Added to your favorites." : "Removed from your favorites.", { target: status });
-    }
-    renderMenu();
-  });
-  // The busy (disabled) button dropped focus; give it back so a keyboard user can toggle again.
-  const lost = !document.activeElement || document.activeElement === document.body || document.activeElement === els.panel;
-  if (lost && button.isConnected && els.panel.open) button.focus({ preventScroll: true });
 }
 
 // ---- the Recently uploaded column (laptops)
@@ -5778,35 +3257,29 @@ function scoreHtml(view) {
     </section>`;
 }
 
-// ---- the panel sheet: alerts, and a day's menu
+// ---- the panel sheet: the Terms of Service and the Privacy Policy
 
 let panelTimer = 0;
 let panelRestore = true;
 let panelOpener = null;
 let pressedPanelBackdrop = false;
 
-function setPanelContent({ kicker, title, intro = "", html, kind }) {
+function openPanel({ kicker, title, intro = "", html, kind }) {
+  clearTimeout(panelTimer);
+  els.panel.classList.remove("is-closing");
+  els.panel.style.transform = "";
   els.panel.dataset.kind = kind;
   els.panelKicker.textContent = kicker;
   els.panelTitle.textContent = title;
   els.panelIntro.textContent = intro;
   els.panelIntro.hidden = !intro;
   els.panelBody.innerHTML = html;
-}
-
-function openPanel(content, { refocus = true } = {}) {
-  clearTimeout(panelTimer);
-  els.panel.classList.remove("is-closing");
-  els.panel.style.transform = "";
-  setPanelContent(content);
   document.documentElement.classList.add("has-sheet");
   if (!els.panel.open) {
     panelOpener = document.activeElement;
     els.panel.showModal();
-    els.panelTitle.focus();
-  } else if (refocus) {
-    els.panelTitle.focus();
   }
+  els.panelTitle.focus();
 }
 
 function closePanel({ restoreFocus: restore = true, swiped = false } = {}) {
@@ -5832,14 +3305,7 @@ els.panel.addEventListener("close", () => {
   if (!els.sheet.open && !els.account.open) document.documentElement.classList.remove("has-sheet");
   els.panelBody.innerHTML = "";
   delete els.panel.dataset.kind;
-  const dishRef = els.panel.dataset.dish;
-  const camRef = els.panel.dataset.cam;
-  delete els.panel.dataset.dish;
-  delete els.panel.dataset.cam;
-  // A dish row redrawn while its sheet was open (a favorite added): focus goes to the new row.
-  let back = panelOpener;
-  if (dishRef && !back?.isConnected) back = visibleOne(`[data-dish="${CSS.escape(dishRef)}"]`);
-  if (camRef && !back?.isConnected) back = visibleOne(`[data-cam="${CSS.escape(camRef)}"]`); // the busy line redrew
+  const back = panelOpener;
   panelOpener = null;
   if (panelRestore && back?.isConnected && !back.hidden && back.getClientRects().length) back.focus({ preventScroll: true });
   panelRestore = true;
@@ -5857,48 +3323,27 @@ dragToDismiss(els.panel, closePanel);
 
 els.panel.addEventListener("click", (event) => {
   if (event.target === els.panel && pressedPanelBackdrop) return closePanel();
-  const button = event.target.closest("[data-action]");
-  switch (button?.dataset.action) {
-    case "close-panel":
-      return closePanel();
-    case "toggle-fav":
-      return toggleFavorite(button);
-    case "open-menu":
-      return openMenu(button.dataset);
-    case "back-alerts":
-      return renderAlertsPanel();
-    case "settings":
-      closePanel({ restoreFocus: false });
-      return openSettings(button.dataset.section);
-  }
+  if (event.target.closest('[data-action="close-panel"]')) closePanel();
 });
 
-// ---- Terms of Service and Privacy Policy: the sidebar on laptops, the page footer on phones and
-// on the sign-in screens. Plain words, and only what the code actually does.
+// ---- Terms of Service and Privacy Policy: the sidebar on laptops, the page footer on phones.
+// Plain words, and only what the code actually does.
 
-const LEGAL_UPDATED = "Last updated November 15, 2026.";
+const LEGAL_UPDATED = "Last updated November 17, 2026.";
 const legalSection = (title, body) => `<section class="legal__part"><h3>${title}</h3>${body}</section>`;
 
 const LEGAL = {
   terms: {
     title: "Terms of Service",
     html: [
-      `<p>MealScholar is a student project from HackUMass '26, piloting with students at UMass Amherst. By using it you agree to these terms.</p>`,
+      `<p>MealScholar is a student project from HackUMass '26. By using it you agree to these terms.</p>`,
       legalSection(
         "What it does",
-        `<p>MealScholar estimates the foods in a meal photo, how much of each is there, and their calories and nutrients. It checks UMass Dining's menus first and uses USDA FoodData Central as a backup. Every number is an estimate.</p>`
+        `<p>MealScholar estimates the foods in a meal photo, how much of each is there, and their calories and nutrients, from USDA FoodData Central. Every number is an estimate.</p>`
       ),
       legalSection(
         "Not medical advice",
         `<p>MealScholar gives information, not medical advice. Estimates from a photo can be wrong. Don't rely on them for medical decisions, and never use them to dose insulin or count carbs for dosing. Any goal you set is your own. Talk to a doctor or dietitian about your health.</p>`
-      ),
-      legalSection(
-        "Allergens and diets",
-        `<p>Allergen and diet labels come from UMass Dining's menus and can be incomplete or out of date. If you have a food allergy, check with dining hall staff before you eat.</p>`
-      ),
-      legalSection(
-        "Your account",
-        `<p>Use an email address you can reach, keep your password to yourself, and keep to one account per person. You're responsible for what happens under your account.</p>`
       ),
       legalSection(
         "Your photos",
@@ -5909,16 +3354,12 @@ const LEGAL = {
         `<p>Don't overload, scrape, attack or break into MealScholar, and don't use it to break the law. Uploads are rate limited.</p>`
       ),
       legalSection(
-        "Busy levels",
-        `<p>How busy a dining hall is comes from its public live cam and is an estimate.</p>`
-      ),
-      legalSection(
         "No guarantees",
         `<p>MealScholar is provided as is, without warranties. It may change, go offline or stop at any time. As far as the law allows, the team isn't liable for losses that come from using it.</p>`
       ),
       legalSection(
         "Ending",
-        `<p>You can delete your account at any time in Settings. We may suspend an account that breaks these terms.</p>`
+        `<p>You can delete all your data at any time in Settings, under Your data.</p>`
       ),
       legalSection(
         "Changes",
@@ -5933,38 +3374,32 @@ const LEGAL = {
       legalSection(
         "What we keep",
         `<ul>
-          <li><strong>Your account:</strong> your email address, the name you give (optional), and your password, kept only as a scrypt hash.</li>
-          <li><strong>Sign-in:</strong> a cookie keeps you signed in for up to 30 days. With each session we keep the IP address and the browser name it came from, to protect your account. Expired sessions are deleted.</li>
-          <li><strong>Your meals:</strong> each photo you log, saved again as a JPEG of at most 1280 pixels plus a small copy, with location and camera details removed; the foods found, their amounts and nutrients; the time; and the dining hall or place name if you shared one. The file you uploaded isn't kept.</li>
-          <li><strong>Your settings:</strong> goals, dining halls, diets, allergens to avoid, favorite dishes, alert choices and whether ranges show.</li>
+          <li><strong>Your meals:</strong> each photo you log, saved again as a JPEG of at most 1280 pixels plus a small copy, with location and camera details removed; the foods found, their amounts and nutrients; the time; and the place name if you shared your location. The file you uploaded isn't kept.</li>
+          <li><strong>Your usual portions:</strong> the amounts you set by hand, so the next photo of that food starts from them.</li>
+          <li><strong>Your settings:</strong> your goals and whether ranges show.</li>
         </ul>`
       ),
       legalSection(
         "Location",
-        `<p>Location is off unless you allow it. When it's on, your location is used to find the nearest dining hall, and only the hall's name is saved with your meal. Your coordinates are not stored.</p>`
+        `<p>Location is off unless you allow it. When it's on, your location is used to name the place you're at, such as a restaurant or café, and only that name is saved with your meal. Your coordinates are not stored.</p>`
       ),
       legalSection(
         "Who else handles it",
         `<ul>
-          <li><strong>Google:</strong> each meal photo, with the time and the dining hall's menu, goes to Google's Gemini API to name the foods and estimate amounts. We ask Google not to store it; Google's API terms cover how it handles the request.</li>
-          <li><strong>MongoDB Atlas</strong> stores accounts, sign-ins and settings.</li>
-          <li><strong>Resend</strong> delivers our emails: confirming your address, password resets, account deletion links, and menu alerts if you turn them on.</li>
+          <li><strong>Google:</strong> each meal photo, with its time and place name, goes to Google's Gemini API to name the foods and estimate amounts. We ask Google not to store it; Google's API terms cover how it handles the request.</li>
+          <li><strong>OpenStreetMap:</strong> when location is on, the photo's coordinates go to OpenStreetMap's Nominatim service to look up the place's name.</li>
           <li><strong>Cloudflare</strong> carries traffic between your browser and our server.</li>
-          <li>Meals and photos are kept on the MealScholar server, which the team runs.</li>
+          <li>Meals, photos and settings are kept on the MealScholar server, which the team runs.</li>
         </ul>
         <p>We don't sell your data, show ads, or use tracking or analytics scripts.</p>`
       ),
       legalSection(
         "On your device",
-        `<p>The app keeps a few small things in your browser: your Appearance choice, the dining hall you last opened on Menu, and whether you were asked about location. If you turn location on, that is saved with your account's email and stays after you log out. The tab you're using also keeps what you type into an account form until you finish, and the code from a password reset link until the new password is saved.</p>`
-      ),
-      legalSection(
-        "Dining hall cams",
-        `<p>Busy levels come from UMass Dining's public live cams. We count the people in view and never identify anyone. We keep the counts; the short clip in the app is replaced every few minutes.</p>`
+        `<p>The app keeps a few small things in your browser: your Appearance choice, whether you were asked about location, and whether you turned it on.</p>`
       ),
       legalSection(
         "Deleting your data",
-        `<p>In Settings you can clear your history or delete everything you've logged. Deleting your account, which you confirm from a link we email you, also removes your account, sign-ins, meals, photos and settings.</p>`
+        `<p>In Settings you can clear your history, which deletes every meal and its photo, or delete all your data: meals, photos, usual portions and settings.</p>`
       ),
       legalSection(
         "Age",
@@ -5994,127 +3429,6 @@ document.addEventListener("click", (event) => {
   link.focus({ preventScroll: true }); // so closing the sheet comes back here (Safari doesn't focus on click)
   openLegal(link.dataset.legal);
 });
-
-/** From the bell or the sidebar's Alerts, with the click event. */
-function openAlerts(event) {
-  // Safari doesn't focus a clicked button: focus it, so closing the sheet comes back to it.
-  if (event?.currentTarget instanceof HTMLElement) event.currentTarget.focus({ preventScroll: true });
-  renderAlertsPanel();
-  loadAlerts(); // fresh, in case a menu changed
-}
-
-function renderAlertsPanel({ refocus = true } = {}) {
-  const alerts = state.alerts;
-  const html = alerts.length
-    ? `<ul class="options alerts">${alerts.map(alertRowHtml).join("")}</ul><p class="note">Tap one to see that menu.</p>`
-    : state.prefs.favorites.length
-      ? `<div class="card sent" role="status"><span class="sent__icon" aria-hidden="true">${icon("bell")}</span><p>None of your favorites are on the menu in the next 7 days.</p></div>
-         <p class="auth-switch">${settingsLinkHtml("Change favorites", "favorites")}</p>`
-      : `<div class="card sent" role="status"><span class="sent__icon" aria-hidden="true">${icon("star")}</span><p>Add favorite dishes and this lists the days they're on the menu.</p></div>
-         <p class="auth-switch">${settingsLinkHtml("Add favorites", "favorites")}</p>`;
-  openPanel(
-    {
-      kicker: "Alerts",
-      title: alerts.length ? "Your favorites on the menu" : "Nothing on the menu yet",
-      intro: "When a dish you starred is on any dining hall's menu in the next 7 days.",
-      html,
-      kind: "alerts",
-    },
-    { refocus }
-  );
-}
-
-function alertRowHtml(a) {
-  const date = typeof a.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.date) ? a.date : null;
-  const dayText = !date ? "" : date === state.todayKey ? "Today" : weekdayShort.format(parseDay(date));
-  const label = String(a.label ?? a.meal ?? "").toLowerCase();
-  const when = [dayText, label].filter(Boolean).join(dayText === "Today" ? ", " : " ");
-  return `
-    <li>
-      <button class="option" type="button" data-action="open-menu" data-location="${esc(a.location_id)}" data-date="${esc(date ?? "")}" data-meal-key="${esc(a.meal ?? "")}">
-        <span class="option__name">${esc(a.name)} at ${esc(a.location_name ?? "")}${SEP}</span>
-        <span class="option__meta">${esc(when)}</span>
-        <span class="option__end">${icon("chevron-right")}</span>
-      </button>
-    </li>`;
-}
-
-async function openMenu({ location, date, mealKey }) {
-  const id = Number(location);
-  if (!Number.isInteger(id) || id < 1 || !/^\d{4}-\d{2}-\d{2}$/.test(date ?? "")) return;
-  setPanelContent({ kicker: "Menu", title: "Loading the menu", html: '<p class="loading"><span class="spinner" aria-hidden="true"></span> One moment.</p>', kind: "menu" });
-  const epoch = state.epoch;
-  try {
-    const menu = await api(`/api/dining/menu?location_id=${id}&date=${date}`);
-    if (epoch !== state.epoch || !els.panel.open) return;
-    renderMenuPanel(menu, mealKey);
-  } catch (err) {
-    if (!els.panel.open || err.signedOut) return;
-    if (diningGone(err)) diningLost();
-    setPanelContent({
-      kicker: "Menu",
-      title: "Couldn't load the menu",
-      html: `<p class="status is-error" role="alert">${esc(err.message)}</p><button class="btn btn--secondary" type="button" data-action="back-alerts">${icon("chevron-left")}Back to alerts</button>`,
-      kind: "menu",
-    });
-    els.panelTitle.focus();
-  }
-}
-
-function renderMenuPanel(menu, mealKey) {
-  const favorites = new Set(state.prefs.favorites.map((f) => dishKey(f.name)));
-  const avoid = new Set(state.prefs.avoid_allergens);
-  const diets = state.prefs.diets;
-  const meals = Array.isArray(menu.meals) ? menu.meals.filter((m) => m && Array.isArray(m.categories)) : [];
-  const shown = []; // each listed dish's marks, so the legend names what the rows show
-  const row = (item) => {
-    const allergens = Array.isArray(item.allergens) ? item.allergens : [];
-    const itemDiets = Array.isArray(item.diets) ? item.diets : [];
-    const marks = {
-      fav: favorites.has(dishKey(item.name)),
-      avoid: allergens.some((a) => avoid.has(a)),
-      off: diets.length > 0 && !diets.every((d) => itemDiets.includes(d)),
-      avoided: allergens.filter((a) => avoid.has(a)),
-      kinds: dietKinds(item),
-    };
-    shown.push(marks);
-    return dishRowHtml({ name: item.name, calories: item.calories, ...marks });
-  };
-  const sections = meals
-    .map((meal, i) => {
-      const categories = meal.categories.filter((c) => c && Array.isArray(c.items));
-      const count = categories.reduce((n, c) => n + c.items.filter((item) => item && typeof item.name === "string").length, 0);
-      const open = meal.meal === mealKey || (meals.length === 1 && i === 0);
-      return `
-        <details class="disclosure menu-meal"${open ? " open" : ""}>
-          <summary><span>${esc(meal.label ?? meal.meal ?? "Meal")}</span><span class="chip">${count} item${count === 1 ? "" : "s"}</span></summary>
-          <div class="disclosure__body">
-            <ul class="dishes__groups">${categories
-              .map(
-                (c) => `
-                <li class="dishes__group">
-                  <p class="dishes__cat">${esc(c.category ?? "Other")}</p>
-                  <ul class="dishes__list">${c.items.filter((item) => item && typeof item.name === "string").map(row).join("")}</ul>
-                </li>`
-              )
-              .join("")}</ul>
-          </div>
-        </details>`;
-    })
-    .join("");
-  const date = typeof menu.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(menu.date) ? parseDay(menu.date) : null;
-  const legend = dishLegendHtml(shown.some((m) => m.fav), shown.some((m) => m.avoid), shown.some((m) => m.off), shown.map((m) => m.kinds));
-  setPanelContent({
-    kicker: date ? dayFormat.format(date) : "Menu",
-    title: menu.location?.name ?? "Menu",
-    html: `
-      <div class="result__nav"><button class="back" type="button" data-action="back-alerts">${icon("chevron-left")}Alerts</button></div>
-      ${legend}
-      ${sections || '<p class="options__empty">No menu for that day.</p>'}`,
-    kind: "menu",
-  });
-  els.panelTitle.focus();
-}
 
 // ---- the settings widgets, shared by the set-up steps and the Settings sheet
 
@@ -6202,253 +3516,6 @@ function revealField(input) {
   for (let box = input.closest("details"); box; box = box.parentElement?.closest("details")) box.open = true;
 }
 
-const AREA_NAMES = { "campus-center": "Campus Center", "around-campus": "Around campus" };
-
-function hallsPickerHtml(prefs, { note = null } = {}) {
-  const locations = state.dining?.locations ?? [];
-  const chosen = prefs.dining_halls.filter((id) => locations.some((l) => l.id === id));
-  // Where a place is, in words, only when that adds something: the menus' area for a dining commons
-  // is its own name again ("berkshire"), and the Grab 'n Go names already say it.
-  const flat = (text) => text.toLowerCase().replace(/[^a-z]/g, "");
-  const areaOf = (l) => {
-    const area = typeof l.area === "string" ? l.area.trim() : "";
-    return area && !flat(l.name).includes(flat(area)) ? AREA_NAMES[area] ?? "" : "";
-  };
-  const row = (l) => `
-    <li>
-      <label class="pick">
-        <input class="pick__box" type="checkbox" data-hall value="${l.id}"${chosen.includes(l.id) ? " checked" : ""}>
-        <span class="pick__check" aria-hidden="true">${icon("check")}</span>
-        <span class="pick__text"><span class="pick__name">${esc(l.name)}</span>${areaOf(l) ? `<span class="pick__area">${SEP}${esc(areaOf(l))}</span>` : ""}</span>
-        <span class="chip pick__main"${chosen[0] === l.id ? "" : " hidden"}>Main</span>
-      </label>
-    </li>`;
-  const commons = locations.filter((l) => l.is_dining_commons === true);
-  const others = locations.filter((l) => l.is_dining_commons !== true);
-  return `
-    <div class="halls" data-halls="${esc(chosen.join(","))}">
-      <div class="halls__find">
-        <button class="btn btn--soft" type="button" data-action="nearest">${icon("pin")}Find my nearest hall</button>
-        <p class="halls__hint">Uses your location once, only to pick a hall. It isn't kept or sent anywhere else.</p>
-      </div>
-      <div class="halls__note" data-nearest-note>${note ? nearestNoteHtml(note, "picker") : ""}</div>
-      ${commons.length ? `<p class="form-field__label">Dining commons</p><ul class="picks">${commons.map(row).join("")}</ul>` : ""}
-      ${others.length ? `<details class="disclosure"><summary>More places (${others.length})</summary><div class="disclosure__body"><ul class="picks">${others.map(row).join("")}</ul></div></details>` : ""}
-      ${locations.length ? "" : '<p class="note">No places have a menu right now.</p>'}
-    </div>`;
-}
-
-/** The chosen halls in the order they were chosen; the first is the main one. */
-function readHalls(root) {
-  const box = $("[data-halls]", root);
-  if (!box) return [];
-  const checked = new Set($$("[data-hall]:checked", root).map((input) => Number(input.value)));
-  const order = box.dataset.halls ? box.dataset.halls.split(",").map(Number) : [];
-  const kept = order.filter((id) => checked.has(id));
-  for (const id of checked) if (!kept.includes(id)) kept.push(id);
-  return kept;
-}
-
-function syncHalls(root, input) {
-  const box = $("[data-halls]", root);
-  const id = Number(input.value);
-  let order = (box.dataset.halls ? box.dataset.halls.split(",").map(Number) : []).filter((v) => v !== id);
-  if (input.checked) order.push(id);
-  box.dataset.halls = order.join(",");
-  markMainHall(root, order[0]);
-}
-
-function markMainHall(root, mainId) {
-  for (const chip of $$(".pick__main", root)) {
-    chip.hidden = Number($("[data-hall]", chip.closest(".pick")).value) !== mainId;
-  }
-}
-
-async function findNearest(root, button) {
-  const note = $("[data-nearest-note]", root);
-  await withBusy(button, async () => {
-    try {
-      const [lat, lon] = await devicePosition();
-      const near = await fetchNearest(lat, lon);
-      if (!near) throw new Error("Couldn't find a dining hall near you right now.");
-      if (!root.isConnected) return;
-      const input = $(`[data-hall][value="${CSS.escape(String(near.location.id))}"]`, root);
-      const box = $("[data-halls]", root);
-      if (input) {
-        input.checked = true;
-        box.dataset.halls = [near.location.id, ...readHalls(root).filter((id) => id !== near.location.id)].join(",");
-        markMainHall(root, near.location.id);
-      }
-      note.innerHTML = nearestNoteHtml(near.note, "picker") + (input ? "" : '<p class="note">That hall has no menu listed right now, so it can\'t be chosen here.</p>');
-      if (state.onboard) state.onboard.nearest = near.note;
-      autosave(root, "dining");
-    } catch (err) {
-      if (!root.isConnected || err.signedOut) return;
-      note.innerHTML = `<p class="status is-error" role="alert">${esc(err.message)}</p>`;
-    }
-  });
-}
-
-function focusPicker(root) {
-  const first = $("[data-hall]", root);
-  if (!first) return;
-  first.closest(".picks")?.scrollIntoView({ block: "nearest", behavior: reducedMotion.matches ? "auto" : "smooth" });
-  first.focus({ preventScroll: true });
-}
-
-function dietChipsHtml(prefs) {
-  const chip = (group, name, on) =>
-    `<li><button class="chip-btn" type="button" data-chip="${group}" data-value="${esc(name)}" aria-pressed="${on}">${icon("check")}${esc(name)}</button></li>`;
-  return `
-    <div class="form-field">
-      <p class="form-field__label" id="diets-label">Diet</p>
-      <ul class="chips" aria-labelledby="diets-label">${DIETS.map((d) => chip("diets", d, prefs.diets.includes(d))).join("")}</ul>
-      <p class="form-field__hint">Menu items carry these labels. Dishes without all of yours are marked Not in your diet.</p>
-    </div>
-    <div class="form-field">
-      <p class="form-field__label" id="allergens-label">Allergens to avoid</p>
-      <ul class="chips" aria-labelledby="allergens-label">${ALLERGENS.map((a) => chip("avoid_allergens", a, prefs.avoid_allergens.includes(a))).join("")}</ul>
-      <p class="form-field__hint">Dishes labelled with these get a mark. A dish without labels isn't necessarily free of them.</p>
-    </div>`;
-}
-
-function readDiet(root) {
-  const pressed = (group) => $$(`[data-chip="${group}"][aria-pressed="true"]`, root).map((chip) => chip.dataset.value);
-  return { diets: pressed("diets"), avoid_allergens: pressed("avoid_allergens") };
-}
-
-function favoritesHtml(prefs) {
-  const n = prefs.favorites.length;
-  return `
-    <div class="favorites" data-favorites>
-      <label class="form-field__label" for="fav-search">Search the campus menus</label>
-      <span class="search">${icon("search")}<input id="fav-search" class="field" type="search" data-fav-search autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="search" placeholder="e.g. butter chicken" aria-describedby="fav-hint"></span>
-      <p id="fav-hint" class="form-field__hint">Checked against the campus menu.</p>
-      <p class="visually-hidden" data-fav-count aria-live="polite"></p>
-      <ul class="options" data-dish-results aria-label="Dishes found"></ul>
-      <p class="form-field__label">Your favorites <span data-fav-n>(${n})</span></p>
-      <ul class="favs" data-fav-list>${prefs.favorites.map((f) => favChipHtml(f.name)).join("")}</ul>
-      <p class="favorites__empty" data-fav-empty${n ? " hidden" : ""}>None yet. Search above and tap a dish to add it.</p>
-      <p class="favorites__status status" data-fav-status></p>
-    </div>`;
-}
-
-const favChipHtml = (name) =>
-  `<li class="fav" data-fav-name="${esc(name)}"><span class="fav__name">${esc(name)}</span><button class="fav__x" type="button" data-fav-remove aria-label="Remove ${esc(name)}">${icon("close")}</button></li>`;
-
-const readFavorites = (root) => $$("[data-fav-name]", root).map((el) => ({ name: el.dataset.favName }));
-
-function syncFavCount(root) {
-  const n = $$("[data-fav-name]", root).length;
-  const count = $("[data-fav-n]", root);
-  if (count) count.textContent = `(${n})`;
-  const empty = $("[data-fav-empty]", root);
-  if (empty) empty.hidden = n > 0;
-}
-
-function addFavorite(root, button) {
-  const name = button.dataset.favAdd;
-  const list = $("[data-fav-list]", root);
-  const status = $("[data-fav-status]", root);
-  if (!name || !list) return;
-  const key = dishKey(name);
-  if (readFavorites(root).some((f) => dishKey(f.name) === key)) return;
-  if (readFavorites(root).length >= MAX_FAVORITES) {
-    if (status) status.textContent = `Keep your favorites to ${MAX_FAVORITES} or fewer.`;
-    return;
-  }
-  if (status) status.textContent = "";
-  list.insertAdjacentHTML("beforeend", favChipHtml(name));
-  button.setAttribute("aria-current", "true");
-  button.disabled = true;
-  $(".option__end", button).innerHTML = `${icon("check")}${SEP}Added`;
-  syncFavCount(root);
-  autosave(root, "favorites");
-}
-
-function removeFavorite(root, button) {
-  const chip = button.closest("[data-fav-name]");
-  if (!chip) return;
-  const key = dishKey(chip.dataset.favName);
-  const next = chip.nextElementSibling?.querySelector("[data-fav-remove]") ?? chip.previousElementSibling?.querySelector("[data-fav-remove]") ?? $("[data-fav-search]", root);
-  chip.remove();
-  next?.focus();
-  syncFavCount(root);
-  for (const option of $$("[data-fav-add]", root)) {
-    if (dishKey(option.dataset.favAdd) !== key) continue;
-    option.disabled = false;
-    option.removeAttribute("aria-current");
-    $(".option__end", option).innerHTML = icon("plus");
-  }
-  autosave(root, "favorites");
-}
-
-let dishTimer = 0;
-let dishSeq = 0;
-
-async function searchDishes(input) {
-  const root = input.closest("[data-prefs-root]");
-  const list = root && $("[data-dish-results]", root);
-  const count = root && $("[data-fav-count]", root);
-  if (!list) return;
-  const q = input.value.trim();
-  const seq = ++dishSeq;
-  if (q.length < 2) {
-    list.innerHTML = "";
-    count.textContent = "";
-    return;
-  }
-  try {
-    const found = await api(`/api/dining/dishes?q=${encodeURIComponent(q)}&limit=8`);
-    if (seq !== dishSeq || !list.isConnected) return;
-    const dishes = Array.isArray(found) ? found.filter((d) => d && typeof d.name === "string") : [];
-    const chosen = new Set(readFavorites(root).map((f) => dishKey(f.name)));
-    list.innerHTML = dishes.length
-      ? dishes.map((d) => dishOptionHtml(d, chosen.has(dishKey(d.name)))).join("")
-      : '<li class="options__empty">Nothing on the campus menus matches that.</li>';
-    count.textContent = dishes.length ? `${dishes.length} dish${dishes.length === 1 ? "" : "es"} found.` : "Nothing on the campus menus matches that.";
-  } catch (err) {
-    if (seq !== dishSeq || !list.isConnected || err.signedOut) return;
-    if (diningGone(err)) diningLost();
-    list.innerHTML = `<li class="options__empty is-error">${esc(err.message)}</li>`;
-    count.textContent = err.message;
-  }
-}
-
-function dishOptionHtml(d, chosen) {
-  const places = Array.isArray(d.locations) ? d.locations.filter((p) => typeof p === "string").slice(0, 3) : [];
-  const meta = [typeof d.calories === "number" ? `${nf0.format(d.calories)} kcal` : null, places.length ? places.join(", ") : null].filter(Boolean).join(" · ");
-  return `
-    <li>
-      <button class="option" type="button" data-fav-add="${esc(d.name)}"${chosen ? ' aria-current="true" disabled' : ""}>
-        <span class="option__name">${esc(d.name)}${SEP}</span>
-        <span class="option__meta">${esc(meta)}</span>
-        <span class="option__end">${chosen ? `${icon("check")}${SEP}Added` : icon("plus")}</span>
-      </button>
-    </li>`;
-}
-
-function alertsFieldsHtml(prefs) {
-  const row = (key, title, hint, on) => `
-    <label class="switch-row switch-row--plain">
-      <span class="switch-row__text">
-        <span class="switch-row__title" id="notify-${key}-title">${title}</span>
-        <span class="switch-row__hint" id="notify-${key}-hint">${hint}</span>
-      </span>
-      <input id="notify-${key}" class="switch" type="checkbox" role="switch" data-notify="${key}"${on ? " checked" : ""} aria-labelledby="notify-${key}-title" aria-describedby="notify-${key}-hint">
-    </label>`;
-  return `
-    <div class="switches">
-      ${row("in_app", "Tell me when my favorites are on the menu", "A bell in the top bar lists what's coming up this week.", prefs.notify.in_app)}
-      ${row("email", "Also email me", emailSending() ? "One short email when they're on, sent only to a confirmed address." : "Email isn't switched on yet, so nothing is sent for now.", prefs.notify.email)}
-    </div>`;
-}
-
-const readNotify = (root) => ({
-  in_app: Boolean($('[data-notify="in_app"]', root)?.checked),
-  email: Boolean($('[data-notify="email"]', root)?.checked),
-});
-
 // Ranges: every amount is an estimate, shown as its likely value. The set-up step offers the
 // low–high range beside it as two choices; Settings → Display has the same choice as a switch.
 // Both inputs carry data-ranges-input, and the checked one's value "on" means show them.
@@ -6485,17 +3552,10 @@ function rangesSwitchHtml(prefs) {
 const readRanges = (root) => ({ show_ranges: $("[data-ranges-input]:checked", root)?.value === "on" });
 
 function summaryHtml(prefs) {
-  const halls = prefs.dining_halls.map(hallNameById).filter(Boolean);
-  const n = prefs.favorites.length;
   const rows = [
     ["Daily goal", prefs.calorie_goal == null ? "No calorie goal" : `${amount(prefs.calorie_goal, "kcal")} kcal a day`],
     ["Ranges", prefs.show_ranges ? "Shown next to each amount" : "Off, just the likely number"],
-    diningOn() ? ["Dining halls", halls.length ? halls.join(", ") : "None chosen"] : null,
-    ["Diet", prefs.diets.length ? prefs.diets.join(", ") : "No diet labels"],
-    ["Allergens to avoid", prefs.avoid_allergens.length ? prefs.avoid_allergens.join(", ") : "None"],
-    diningOn() ? ["Favorites", n ? `${n} dish${n === 1 ? "" : "es"}` : "None yet"] : null,
-    diningOn() ? ["Alerts", prefs.notify.in_app ? `In the app${prefs.notify.email ? " and by email" : ""}` : "Off"] : null,
-  ].filter(Boolean);
+  ];
   return `
     <dl class="summary">${rows.map(([k, v]) => `<div class="summary__row"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>
     <p class="note">Change any of this later in Settings.</p>`;
@@ -6518,10 +3578,9 @@ function flashStatus(el, text) {
 function autosave(root, section) {
   if (root.dataset.mode !== "settings") return;
   clearTimeout(saveTimers.get(section)?.id);
-  const epoch = state.epoch;
   const run = () => {
     saveTimers.delete(section);
-    if (epoch === state.epoch) saveSection(root, section); // not once the account has signed out
+    saveSection(root, section);
   };
   saveTimers.set(section, { id: setTimeout(run, 350), run });
 }
@@ -6538,14 +3597,6 @@ function readSection(section, root) {
   switch (section) {
     case "goals":
       return readGoalFields(root);
-    case "dining":
-      return { dining_halls: readHalls(root) };
-    case "diet":
-      return readDiet(root);
-    case "favorites":
-      return { favorites: readFavorites(root) };
-    case "alerts":
-      return { notify: readNotify(root) };
     case "ranges": // the set-up step
     case "display": // the Settings section
       return readRanges(root);
@@ -6566,10 +3617,10 @@ async function saveSection(root, section) {
     retrySaves.delete(section);
     if (status?.isConnected) flashStatus(status, "Saved.");
   } catch (err) {
-    if (err.signedOut || !root.isConnected) return;
+    if (!root.isConnected) return;
     // The server still has what it had, so the widgets go back to that, with the reason and a
-    // way to send the change again. Focus that was here (or lost: a disabled dish option drops
-    // it) lands on Try again when its control is gone.
+    // way to send the change again. Focus that was here (or lost) lands on Try again when its
+    // control is gone.
     const hadFocus = root.contains(document.activeElement) || document.activeElement === document.body;
     retrySaves.set(section, changes);
     rerenderSection(root, section);
@@ -6581,14 +3632,6 @@ async function saveSection(root, section) {
 /** A Settings section's widgets, from the saved preferences. */
 function sectionBodyHtml(section, prefs) {
   switch (section) {
-    case "dining":
-      return hallsPickerHtml(prefs);
-    case "diet":
-      return dietChipsHtml(prefs);
-    case "favorites":
-      return favoritesHtml(prefs);
-    case "alerts":
-      return alertsFieldsHtml(prefs);
     case "display":
       return rangesSwitchHtml(prefs);
     default:
@@ -6600,18 +3643,11 @@ function sectionBodyHtml(section, prefs) {
 function controlSelector(el) {
   if (!(el instanceof Element)) return null;
   const quote = (value) => `"${String(value).replace(/["\\]/g, "\\$&")}"`;
-  if (el.matches("[data-chip]")) return `[data-chip=${quote(el.dataset.chip)}][data-value=${quote(el.dataset.value)}]`;
-  if (el.matches("[data-hall]")) return `[data-hall][value=${quote(el.value)}]`;
-  if (el.matches("[data-notify]")) return `[data-notify=${quote(el.dataset.notify)}]`;
   if (el.matches("[data-ranges-input]")) return `[data-ranges-input][value=${quote(el.value)}]`;
-  if (el.matches("[data-fav-add]")) return `[data-fav-add=${quote(el.dataset.favAdd)}]`;
-  if (el.closest("[data-favorites]")) return "[data-fav-search]";
-  if (el.matches('[data-action="nearest"]')) return '[data-action="nearest"]';
   return null;
 }
 
-/** Draw a Settings section again from the saved preferences, keeping focus on the same control.
-    The nearest-hall note and the dish search (its words and results) stay as they were. */
+/** Draw a Settings section again from the saved preferences, keeping focus on the same control. */
 function rerenderSection(root, section) {
   const prefs = state.prefs;
   const body = prefs && root.dataset.mode === "settings" ? sectionBodyHtml(section, prefs) : null;
@@ -6619,35 +3655,10 @@ function rerenderSection(root, section) {
   const status = $("[data-status]", root);
   const title = $(".account__section-title", root);
   const focus = root.contains(document.activeElement) ? controlSelector(document.activeElement) : null;
-  const keep = {
-    note: $("[data-nearest-note]", root)?.innerHTML ?? "",
-    query: $("[data-fav-search]", root)?.value ?? "",
-    results: $("[data-dish-results]", root)?.innerHTML ?? "",
-  };
   for (const node of [...root.children]) if (node !== title && node !== status) node.remove();
   if (status) status.insertAdjacentHTML("beforebegin", body);
   else root.insertAdjacentHTML("beforeend", body);
-  const note = $("[data-nearest-note]", root);
-  if (note && keep.note) note.innerHTML = keep.note; // the app's own markup from a moment ago
-  const search = $("[data-fav-search]", root);
-  if (search && keep.query) {
-    search.value = keep.query;
-    $("[data-dish-results]", root).innerHTML = keep.results;
-    syncFavOptions(root);
-  }
   if (focus) root.querySelector(focus)?.focus({ preventScroll: true });
-}
-
-/** The "Added" marks in the dish results follow the favorites list. */
-function syncFavOptions(root) {
-  const chosen = new Set(readFavorites(root).map((f) => dishKey(f.name)));
-  for (const option of $$("[data-fav-add]", root)) {
-    const on = chosen.has(dishKey(option.dataset.favAdd));
-    option.disabled = on;
-    if (on) option.setAttribute("aria-current", "true");
-    else option.removeAttribute("aria-current");
-    $(".option__end", option).innerHTML = on ? `${icon("check")}${SEP}Added` : icon("plus");
-  }
 }
 
 /** The section's status line: why the save failed, and Try again. */
@@ -6679,7 +3690,7 @@ async function retrySave(root, button) {
       flashStatus($("[data-status]", root), "Saved.");
       $(".account__section-title", root)?.focus({ preventScroll: true });
     } catch (err) {
-      if (err.signedOut || !root.isConnected) return;
+      if (!root.isConnected) return;
       showSaveFailed(root, err.message);
       $('[data-action="retry-save"]', root)?.focus({ preventScroll: true });
     }
@@ -6702,10 +3713,10 @@ async function saveGoalsForm(form) {
   });
 }
 
-/** A 400 names its field (nutrient_goals.protein_g, notify.email, favorites); the message goes
-    next to that field when there is one, else above the button. */
+/** A 400 names its field (nutrient_goals.protein_g); the message goes next to that field when
+    there is one, else above the button. */
 function showPrefsError(form, err) {
-  if (err.signedOut || !form.isConnected) return;
+  if (!form.isConnected) return;
   let name = err.field ?? "";
   if (name.startsWith("nutrient_goals.")) name = name.slice("nutrient_goals.".length);
   const input = name ? form.querySelector(`input[name="${CSS.escape(name)}"]`) : null;
@@ -6727,25 +3738,8 @@ function showPrefsError(form, err) {
 
 function prefsClick(event) {
   const root = event.target.closest("[data-prefs-root]");
-  if (!root) return;
-  const chip = event.target.closest("[data-chip]");
-  if (chip) {
-    chip.setAttribute("aria-pressed", String(chip.getAttribute("aria-pressed") !== "true"));
-    return autosave(root, "diet");
-  }
-  const add = event.target.closest("[data-fav-add]");
-  if (add) return addFavorite(root, add);
-  const remove = event.target.closest("[data-fav-remove]");
-  if (remove) return removeFavorite(root, remove);
-  const action = event.target.closest("[data-action]");
-  switch (action?.dataset.action) {
-    case "nearest":
-      return findNearest(root, action);
-    case "focus-picker":
-      return focusPicker(root);
-    case "retry-save":
-      return retrySave(root, action);
-  }
+  const action = event.target.closest('[data-action="retry-save"]');
+  if (root && action) retrySave(root, action);
 }
 
 function prefsChange(event) {
@@ -6759,77 +3753,10 @@ function prefsChange(event) {
     if (own) $('input[name="calorie_goal"]', root)?.focus();
     return;
   }
-  if (input.matches("[data-hall]")) {
-    syncHalls(root, input);
-    return autosave(root, "dining");
-  }
-  if (input.matches("[data-notify]")) return autosave(root, "alerts");
   if (input.matches("[data-ranges-input]")) return autosave(root, "display");
 }
 
-function prefsInput(event) {
-  const input = event.target.closest?.("[data-fav-search]");
-  if (!input) return;
-  clearTimeout(dishTimer);
-  dishTimer = setTimeout(() => searchDishes(input), 250);
-}
-
-/** Enter in the dish search searches now instead of submitting the step. */
-function prefsKeydown(event) {
-  const input = event.target.closest?.("[data-fav-search]");
-  if (!input || event.key !== "Enter") return;
-  event.preventDefault();
-  clearTimeout(dishTimer);
-  searchDishes(input);
-  if (!finePointer.matches) input.blur();
-}
-
-els.account.addEventListener("keydown", prefsKeydown);
-
-// ---- Settings: the account sheet with the preferences in it
-
-function accountIdHtml(user) {
-  const created = new Date(user.created_at);
-  const since = Number.isNaN(created.getTime()) ? "" : `<p class="account__since">Member since ${monthYear.format(created)}</p>`;
-  return `
-    <div class="account__id">
-      <span class="avatar avatar--lg" aria-hidden="true">${esc(initials(user))}</span>
-      <div class="account__who">
-        <p class="account__email">${esc(user.email)}</p>
-        <p>${
-          user.email_verified
-            ? `<span class="chip chip--ok">${icon("check")}Confirmed</span>`
-            : '<span class="chip chip--alert">Not confirmed</span>'
-        }</p>
-      </div>
-      <button class="btn btn--soft account__logout" type="button" data-action="sign-out">${icon("logout")}Log out</button>
-    </div>
-    ${
-      user.email_verified
-        ? ""
-        : `<div class="account__confirm" data-confirm="account">
-             <p>${emailSending() ? `We sent a link to ${esc(user.email)}. Open it to confirm your email.` : `${NOT_SWITCHED_ON}, so the confirmation link may not arrive.`}</p>
-             <div class="banner__actions">${confirmActionsHtml()}</div>
-             <p class="banner__status" role="status"></p>
-           </div>`
-    }
-    ${since}`;
-}
-
-function passwordSectionHtml(user) {
-  return `
-    <section class="account__section" aria-labelledby="password-title">
-      <h3 id="password-title" class="account__section-title">Password</h3>
-      <button class="btn btn--soft btn--block" type="button" data-action="show-change-password" aria-expanded="false" aria-controls="change-password">${icon("key")}Change password</button>
-      <form id="change-password" class="form form--plain" data-form="change-password" novalidate hidden>
-        <input class="visually-hidden" type="email" name="username" autocomplete="username" value="${esc(user.email)}" tabindex="-1" aria-hidden="true" readonly>
-        ${passwordFieldHtml({ id: "current-password", name: "current_password", label: "Current password", autocomplete: "current-password" })}
-        ${passwordFieldHtml({ id: "new-password", name: "new_password", label: "New password", autocomplete: "new-password", hint: "At least 8 characters." })}
-        <p class="form-error" role="alert" hidden></p>
-        <button class="btn btn--primary btn--block" type="submit">Save new password</button>
-      </form>
-    </section>`;
-}
+// ---- Settings: the #account sheet with the preferences in it
 
 /** System, Light or Dark, saved on this device. The theme script in index.html applies the choice
     when a data-theme-input control changes. */
@@ -6847,61 +3774,42 @@ function appearanceSectionHtml() {
     </section>`;
 }
 
-/** Settings → Your data: clear history, and delete everything (no account) or the account itself.
-    Each asks once more, in place, before anything is deleted. */
-function dataSectionHtml(user) {
-  const row = (id, title, note, label, danger, action = "ask-data") => `
+/** Settings → Your data: clear history, and delete everything. Each asks once more, in place,
+    before anything is deleted. */
+function dataSectionHtml() {
+  const row = (id, title, note, label, danger) => `
     <div class="data-row">
       <div class="data-row__text">
         <p class="data-row__title">${title}</p>
         <p class="data-row__note">${note}</p>
       </div>
-      <button class="btn ${danger ? "btn--danger" : "btn--secondary"} data-row__btn" type="button" data-action="${action}" data-ask="${id}" aria-expanded="false" aria-controls="${id}">${label}</button>
-    </div>`;
-  const buttons = (action, label) => `
-    <div class="delete__row">
-      <button class="btn btn--danger" type="${action ? "button" : "submit"}"${action ? ` data-action="${action}"` : ""}>${icon("trash")}${label}</button>
-      <button class="btn btn--secondary" type="button" data-action="cancel-data">Cancel</button>
+      <button class="btn ${danger ? "btn--danger" : "btn--secondary"} data-row__btn" type="button" data-action="ask-data" data-ask="${id}" aria-expanded="false" aria-controls="${id}">${label}</button>
     </div>`;
   const ask = (id, text, action, label) => `
     <div class="data-ask" id="${id}" hidden>
       <p class="delete__ask">${text}</p>
-      ${buttons(action, label)}
+      <div class="delete__row">
+        <button class="btn btn--danger" type="button" data-action="${action}">${icon("trash")}${label}</button>
+        <button class="btn btn--secondary" type="button" data-action="cancel-data">Cancel</button>
+      </div>
     </div>`;
-  // With emails going out, the account is deleted by a link we email (requestDeleteLink); the panel
-  // fills in once it is sent. Otherwise the password deletes at once, with a check in place.
-  const byEmail = `${row("data-delete-account", "Delete account", "Deletes your account and everything in it: meals and their photos, goal, dining halls, favorites and settings. A link we email you confirms it.", "Delete account", true, "delete-email")}
-      <div class="data-ask" id="data-delete-account" hidden></div>`;
-  const last = user
-    ? emailSending()
-      ? byEmail
-      : `${row("data-delete-account", "Delete account", "Deletes your account and everything in it: meals and their photos, goal, dining halls, favorites and settings.", "Delete account", true)}
-      <form class="data-ask form form--plain" id="data-delete-account" data-form="delete-account" novalidate hidden>
-        <p class="delete__ask">This can't be undone. Enter your password to delete your account.</p>
-        <input class="visually-hidden" type="email" name="username" autocomplete="username" value="${esc(user.email)}" tabindex="-1" aria-hidden="true" readonly>
-        ${passwordFieldHtml({ id: "delete-password", name: "password", label: "Password", autocomplete: "current-password" })}
-        <p class="form-error" role="alert" hidden></p>
-        ${buttons(null, "Delete account")}
-      </form>`
-    : `${row("data-erase", "Delete all my data", "Deletes every meal and its photo, your goal, dining halls, favorites and settings from the server, then starts over.", "Delete all", true)}
-      ${ask("data-erase", "Delete everything MealScholar keeps for you? This can't be undone.", "erase-data", "Delete everything")}`;
   return `
     <section class="account__section data-zone" id="settings-data" aria-labelledby="settings-data-title">
       <h3 id="settings-data-title" class="account__section-title" tabindex="-1">Your data</h3>
       ${row("data-clear", "Clear history", "Deletes every meal you've logged and its photo, from the server too. Your goal and settings stay.", "Clear history", false)}
       ${ask("data-clear", "Delete every meal you've logged and its photo? This can't be undone.", "clear-history", "Delete all meals")}
-      ${last}
+      ${row("data-erase", "Delete all my data", "Deletes every meal and its photo, your usual portions, your goal and settings from the server, then starts over.", "Delete all", true)}
+      ${ask("data-erase", "Delete everything MealScholar keeps for you? This can't be undone.", "erase-data", "Delete everything")}
       <p class="settings__status status" role="status" data-data-status></p>
     </section>`;
 }
 
 function renderSettingsBody() {
-  const user = state.localUser ? null : state.user;
   const prefs = state.prefs;
   if (!prefs) return;
-  els.accountKicker.textContent = user ? "Settings" : "MealScholar";
-  els.accountTitle.textContent = user ? user.name || "Your account" : "Settings";
-  els.accountIntro.textContent = diningOn() ? "Your goal, your halls and diet, your alerts and how the app looks." : "Your goal, your diet and how the app looks.";
+  els.accountKicker.textContent = "MealScholar";
+  els.accountTitle.textContent = "Settings";
+  els.accountIntro.textContent = "Your goal, how amounts show and how the app looks.";
   els.accountIntro.hidden = false;
   const section = (id, title, body) => `
     <section class="account__section settings" id="settings-${id}" aria-labelledby="settings-${id}-title" data-prefs-root data-mode="settings" data-section="${id}">
@@ -6918,66 +3826,41 @@ function renderSettingsBody() {
        <button class="btn btn--primary btn--block" type="submit">Save goal</button>
      </form>`
   );
-  const dining = diningOn();
-  const halls = dining ? section("dining", "Dining halls", hallsPickerHtml(prefs)) : "";
-  const diet = section("diet", "Diet and allergies", dietChipsHtml(prefs));
-  const favorites = dining ? section("favorites", "Favorite foods", favoritesHtml(prefs)) : "";
-  const alerts = dining ? section("alerts", "Alerts", alertsFieldsHtml(prefs)) : "";
-  const noDining = dining ? "" : `<p class="note settings__nodining">Campus menus aren't connected on this server, so dining halls, favorites and alerts are off.</p>`;
   const display = section("display", "Display", rangesSwitchHtml(prefs));
   els.accountBody.innerHTML = `
-    ${user ? accountIdHtml(user) : '<p class="note">You\'re using MealScholar on this device without an account. These settings stay on this server.</p>'}
-    ${goals}${halls}${diet}${favorites}${alerts}${noDining}
+    ${goals}
     ${display}${appearanceSectionHtml()}
-    ${user ? passwordSectionHtml(user) : ""}
-    <p class="account__status status" role="status"></p>
     <button class="btn btn--soft btn--block" type="button" data-install${installable() ? "" : " hidden"}>${icon("home")}Add to Home Screen</button>
-    ${dataSectionHtml(user)}`;
+    ${dataSectionHtml()}`;
 }
 
 // ----------------------------------------------------------- onboarding
-// Right after creating an account, and on the first sign-in while prefs.onboarded is false: one
-// screen per step, every step skippable, one PATCH per step as the person moves on, and
-// onboarded: true at the end or at "Skip for now".
+// The first time the app opens (prefs.onboarded is false): one screen per step, every step
+// skippable, one PATCH per step as the person moves on, and onboarded: true at the end or at
+// "Skip for now".
 
 const STEP_TITLES = {
-  name: "Your name",
   goal: "Daily goal",
   ranges: "Ranges",
-  halls: "Where you eat",
-  diet: "Diet and allergies",
-  favorites: "Favorite foods",
-  alerts: "Alerts",
   done: "All set",
 };
 
 // A lede is a sentence, or a function of the choices so far (the goal step comes before Ranges).
 const STEP_LEDES = {
-  name: "Shown in Settings. Optional.",
   goal: () =>
     `Optional. With a goal, the dashboard shows what's left for the day. Without one, it shows ${rangesOn() ? "the ranges of" : "just"} what you ate.`,
   ranges: "Every amount is an estimate. Show the range it falls in next to the likely number?",
-  halls: "Pick the dining halls you eat at most. The first one is your main hall.",
-  diet: "Dishes that don't fit your diet are marked on menus, and allergens you avoid get a mark.",
-  favorites: "We'll tell you when these are on the menu.",
-  alerts: "How to hear about your favorites.",
   done: "Here's what you chose. You can change any of it in Settings.",
 };
 
-function onboardingSteps() {
-  const dining = diningOn();
-  return ["name", "goal", "ranges", ...(dining ? ["halls"] : []), "diet", ...(dining ? ["favorites", "alerts"] : []), "done"];
-}
+const ONBOARDING_STEPS = ["goal", "ranges", "done"];
 
 function startOnboarding() {
   dropSheets();
-  state.onboard = { steps: onboardingSteps(), at: 0, nearest: null };
+  state.onboard = { steps: ONBOARDING_STEPS, at: 0 };
   document.body.dataset.screen = "onboard";
-  els.auth.hidden = true;
-  els.auth.innerHTML = "";
   els.onboard.hidden = false;
-  updateAccountUi();
-  updateBell();
+  updateSettingsUi();
   renderOnboarding();
   syncHistory();
 }
@@ -6985,34 +3868,10 @@ function startOnboarding() {
 function stepBodyHtml(step) {
   const prefs = state.prefs;
   switch (step) {
-    case "name": {
-      const user = state.localUser ? null : state.user;
-      const name = (user?.name ?? "").trim();
-      return `
-        <div class="form-field">
-          <p class="form-field__label">Name</p>
-          <p class="onboard__name">${name ? esc(name) : "No name yet"}</p>
-          <p class="form-field__hint">${
-            user
-              ? name
-                ? "From your account."
-                : "Your account doesn't have a name."
-              : "You're using MealScholar on this device without an account."
-          }</p>
-        </div>`;
-    }
     case "goal":
       return goalFieldsHtml(prefs);
     case "ranges":
       return rangesChoiceHtml(prefs);
-    case "halls":
-      return hallsPickerHtml(prefs, { note: state.onboard?.nearest ?? null });
-    case "diet":
-      return dietChipsHtml(prefs);
-    case "favorites":
-      return favoritesHtml(prefs);
-    case "alerts":
-      return alertsFieldsHtml(prefs);
     case "done":
       return summaryHtml(prefs);
     default:
@@ -7076,7 +3935,7 @@ async function onboardNav(action, button) {
         await savePrefs({ onboarded: true });
       } catch (err) {
         // Not saved, so the steps would come back next time: say why and stay, like Next does.
-        if (!err.signedOut && state.onboard) showPrefsError(form, err);
+        if (state.onboard) showPrefsError(form, err);
         return;
       }
       if (state.onboard) finishOnboarding("Set this up any time in Settings.");
@@ -7084,7 +3943,7 @@ async function onboardNav(action, button) {
     return;
   }
   clearFormErrors(form);
-  const changes = step === "done" ? { onboarded: true } : readSection(step === "halls" ? "dining" : step === "goal" ? "goals" : step, form);
+  const changes = step === "done" ? { onboarded: true } : readSection(step === "goal" ? "goals" : step, form);
   if (!changes) return; // an error is showing at a field
   const at = ob.at; // a Back pressed while this saves wins: move on only from the step that was saved
   await withBusy(button, async () => {
@@ -7115,12 +3974,8 @@ els.onboard.addEventListener("submit", (event) => {
   if (next && !next.disabled && next.getAttribute("aria-busy") !== "true") onboardNav(next.dataset.onboard, next);
 });
 
-els.onboard.addEventListener("input", (event) => {
-  clearFieldError(event.target);
-  prefsInput(event);
-});
+els.onboard.addEventListener("input", (event) => clearFieldError(event.target));
 els.onboard.addEventListener("change", prefsChange);
-els.onboard.addEventListener("keydown", prefsKeydown);
 
 // ----------------------------------------------------------------- wiring
 
@@ -7160,24 +4015,20 @@ document.addEventListener("drop", (event) => {
   if (file) analyze(file);
 });
 
-// The location switch is remembered for each person on this device: the next account starts with
-// it off, and a person who switched it on finds it on next time.
+// The location switch is remembered on this device: switched on once, it's on next time.
 const LOCATION_KEY = "mealscholar:location";
 const ASKED_KEY = "mealscholar:location-asked";
-const locationOwner = () => (state.user?.email ? `user:${state.user.email}` : "local");
 
 function rememberLocation(on) {
   try {
-    const saved = JSON.parse(localStorage.getItem(LOCATION_KEY) || "{}");
-    if (on) saved[locationOwner()] = true;
-    else delete saved[locationOwner()];
-    localStorage.setItem(LOCATION_KEY, JSON.stringify(saved));
+    if (on) localStorage.setItem(LOCATION_KEY, "1");
+    else localStorage.removeItem(LOCATION_KEY);
   } catch {}
 }
 
 function rememberedLocation() {
   try {
-    return JSON.parse(localStorage.getItem(LOCATION_KEY) || "{}")[locationOwner()] === true;
+    return localStorage.getItem(LOCATION_KEY) === "1";
   } catch {
     return false;
   }
@@ -7196,21 +4047,11 @@ function restoreLocation() {
   if (!rememberedLocation() || !navigator.geolocation) return;
   els.location.checked = true;
   // Permission taken back in the browser's settings since: the switch goes off again.
-  const epoch = state.epoch;
   locationPermission().then((permission) => {
-    if (permission !== "denied" || epoch !== state.epoch) return;
+    if (permission !== "denied") return;
     els.location.checked = false;
     rememberLocation(false);
   });
-}
-
-/** Location just came on: the menus follow the nearest hall now. */
-function locationChanged() {
-  if (!diningOn()) return;
-  state.upcoming = null; // the upcoming meal follows the nearest hall, or the hall chosen in Settings
-  loadUpcoming();
-  if (state.view === "menu") renderMenu();
-  ensureMenus();
 }
 
 els.location.addEventListener("change", async () => {
@@ -7218,7 +4059,6 @@ els.location.addEventListener("change", async () => {
   if (!els.location.checked) {
     setStatus("", { target });
     rememberLocation(false);
-    locationChanged();
     return;
   }
   try {
@@ -7226,7 +4066,6 @@ els.location.addEventListener("change", async () => {
     setStatus("Location is on.", { target });
     rememberLocation(true);
     hideLocateAsk();
-    locationChanged();
   } catch (err) {
     els.location.checked = false;
     setStatus(err.message, { error: true, target });
@@ -7247,16 +4086,15 @@ function askedAboutLocation() {
 
 async function renderLocateAsk() {
   if (!navigator.geolocation || els.location.checked || askedAboutLocation()) return hideLocateAsk();
-  const epoch = state.epoch;
   const permission = await locationPermission();
-  if (epoch !== state.epoch || document.body.dataset.screen !== "app") return;
+  if (document.body.dataset.screen !== "app") return;
   if (permission === "granted" || permission === "denied" || els.location.checked) return hideLocateAsk();
   els.locateAsk.innerHTML = `
     <section class="card locate-card" aria-labelledby="locate-title">
       <span class="locate-card__icon" aria-hidden="true">${icon("pin")}</span>
       <div class="locate-card__text">
         <h2 id="locate-title" class="locate-card__title">Name the place on your meals</h2>
-        <p>Allow location to name the dining hall on your meals; nothing else is stored.</p>
+        <p>Allow location to name the restaurant or café on your meals; nothing else is stored.</p>
       </div>
       <div class="locate-card__actions">
         <button class="btn btn--primary" type="button" data-action="locate-allow">Allow</button>
@@ -7293,7 +4131,6 @@ async function allowLocation(button) {
       els.location.checked = true;
       rememberLocation(true);
       toast("Location is on. Meals get the place name.");
-      locationChanged();
     } catch (err) {
       toast(`${err.message} You can switch it on later from a photo's options.`);
     }
@@ -7304,12 +4141,8 @@ async function allowLocation(button) {
 // The laptop dashboard's round "+" button: straight to the photo picker, like the phone's.
 els.plus.addEventListener("click", snapMeal);
 
-// The sidebar's Alerts and Settings do what the bell and the avatar do.
-els.railAlerts.addEventListener("click", openAlerts);
+// The sidebar's Settings does what the gear in the top bar does.
 els.railSettings.addEventListener("click", openAccount);
-els.railLogout.addEventListener("click", () => signOut(els.railLogout));
-
-els.bell.addEventListener("click", openAlerts);
 
 els.capture.addEventListener("click", (event) => {
   if (!event.target.closest('[data-action="leave-capture"]')) return;
@@ -7323,25 +4156,11 @@ els.skip.addEventListener("click", (event) => {
   els.main.focus();
 });
 
-// Back to the page after a while (or past midnight): today may be a new day, and the next meal may have moved on.
+// Back to the page after a while (or past midnight): today may be a new day.
 document.addEventListener("visibilitychange", () => {
   if (document.hidden || document.body.dataset.screen !== "app") return;
   if (ensureToday()) loadDashboard();
-  refreshDining();
 });
-
-/** ?verify=, ?reset= and ?delete= carry one-time tokens: take them, then drop them from the address bar. */
-function takeLinkTokens() {
-  const url = new URL(location.href);
-  const tokens = {};
-  for (const param of ["verify", "reset", "delete"]) {
-    tokens[param] = url.searchParams.get(param);
-    url.searchParams.delete(param);
-  }
-  baseUrl = url.pathname + url.search;
-  if (Object.values(tokens).some((token) => token !== null)) history.replaceState(null, "", baseUrl + url.hash);
-  return tokens;
-}
 
 /** The app couldn't start: nothing on it works until a reload, so Try again reloads once the server answers. */
 function bootFailed(err) {
@@ -7360,77 +4179,21 @@ function bootFailed(err) {
 async function init() {
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   showStartOverNotice();
-  const links = takeLinkTokens();
   bootRoute = hashView();
-  // A refresh keeps the account screen that was open: its entry says which one.
-  const saved = history.state;
-  if (!isAuthEntry(saved)) history.replaceState({ layers: [] }, "", baseUrl);
+  history.replaceState({ layers: [] }, "", baseUrl);
   onScroll();
   syncTabs();
   let status;
-  let nutrients;
   try {
-    [status, nutrients] = await Promise.all([
-      api("/api/status", { session: false }),
-      api("/api/nutrients", { session: false }).catch((err) => err),
-    ]);
+    [status, state.nutrients] = await Promise.all([api("/api/status"), api("/api/nutrients")]);
   } catch (err) {
     return bootFailed(err);
   }
-  const accounts = status.auth_required === true;
-  if (nutrients instanceof Error) {
-    // With accounts on, nutrient labels may need a sign-in; they load again after it.
-    if (!(accounts && nutrients.status === 401)) return bootFailed(nutrients);
-  } else {
-    state.nutrients = nutrients;
-  }
   renderSetup(status);
-
-  if (!accounts) {
-    // No accounts on this server. It may still keep preferences for one local user (sign-in
-    // optional); if not, the app is as it always was, starting on Analyze.
-    const prefs = await fetchPrefs();
-    if (prefs) {
-      state.localUser = true;
-      enablePrefs(prefs);
-      await loadDining();
-      loadAlerts();
-      if (needsOnboarding()) return startOnboarding();
-      return enterApp();
-    }
-    return enterApp();
-  }
-
-  enableAccounts(status);
-  loadAuthDraft();
-  // A reset link's token stays in this tab until the new password is saved, so a refresh keeps the form.
-  if (links.reset) tabStore.set(RESET_KEY, links.reset);
-  try {
-    state.user = (await api("/api/auth/me")).user;
-  } catch (err) {
-    if (err.status !== 401) return bootFailed(err);
-    state.user = null;
-  }
-  if (state.user) await setupPrefs();
-  const resetToken = links.reset ?? (links.verify || links.delete ? null : tabStore.get(RESET_KEY));
-  if (resetToken) {
-    state.resetToken = resetToken;
-    showAuth("reset");
-    return syncHistory();
-  }
-  if (links.delete) {
-    state.deleteToken = links.delete;
-    showAuth("delete"); // asks first, signed in or not; the token stays in memory only
-    return syncHistory();
-  }
-  if (links.verify) {
-    const confirming = confirmEmail(links.verify); // shows "Confirming your email" right away
-    syncHistory();
-    return confirming;
-  }
-  if (state.user) return needsOnboarding() ? startOnboarding() : enterApp();
-  showAuthPath(isAuthEntry(saved) ? saved.auth : []);
-  syncHistory();
+  // The preferences always answer; should they fail anyway, the app runs without them and says so.
+  await setupPrefs();
+  if (needsOnboarding()) return startOnboarding();
+  enterApp();
 }
 
 init();

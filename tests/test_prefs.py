@@ -1,34 +1,14 @@
-"""Onboarding preferences over HTTP: defaults, validation, partial updates, sign-in and storage.
+"""Preferences over HTTP: defaults, validation, partial updates and storage in the diary database."""
 
-Everything runs in memory and MongoDB is never contacted; MongoPrefsStore's queries are checked
-against a stand-in collection.
-"""
-
-import copy
 from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from pymongo import ReturnDocument
 
-from mealscholar.auth import AuthService
-from mealscholar.auth_store import MemoryAuthStore, utc_now
 from mealscholar.config import load_settings
-from mealscholar.dining import Dining
-from mealscholar.prefs import (
-    GOAL_MAX,
-    LOCAL_USER,
-    MemoryPrefsStore,
-    MongoPrefsStore,
-    NutrientGoals,
-    Prefs,
-    PrefsService,
-    dish_key,
-)
+from mealscholar.prefs import GOAL_MAX, NutrientGoals, Prefs, PrefsStore, utc_now
 from mealscholar.web import create_app
 
-PASSWORD = "correct horse battery"
-SIGN_IN = {"detail": "Sign in to continue."}
 NOT_AN_OBJECT = {"detail": "Send the preferences as a JSON object."}
 TOO_LARGE = {"detail": "That request is too large."}
 FDA_DAILY_VALUES = {"protein_g": 50, "carbs_g": 275, "fat_g": 78, "fiber_g": 28, "sugars_g": None, "sodium_mg": 2300}
@@ -36,52 +16,23 @@ DEFAULTS = {
     "onboarded": False,
     "calorie_goal": None,
     "nutrient_goals": FDA_DAILY_VALUES,
-    "dining_halls": [],
-    "diets": [],
-    "avoid_allergens": [],
-    "favorites": [],
-    "notify": {"in_app": True, "email": False},
     "show_ranges": False,
     "updated_at": None,
 }
 
 
-class HallsOnly:
-    """A dining source that knows two locations and has no menus."""
-
-    def locations(self):
-        return [
-            {"_id": 1, "name": "Worcester Dining Commons", "is_dining_commons": True, "dates_available": []},
-            {"_id": 7, "name": "Blue Wall", "is_dining_commons": False, "dates_available": []},
-        ]
-
-    def daily_menus(self, ids, *, names_only=False):
-        return []
-
-    def dishes(self, pattern, limit):
-        return []
-
-
 @pytest.fixture
 def make_app(tmp_path):
-    """App factory: environment variables as keyword arguments; accounts and prefs in memory."""
+    """App factory: environment variables as keyword arguments, everything kept under tmp_path."""
 
-    def make(*, prefs=None, dining=None, **env):
-        settings = load_settings({"MEALSCHOLAR_HOME": str(tmp_path), **env})
-        auth = AuthService.from_settings(settings, store=MemoryAuthStore())
-        return create_app(settings, auth=auth, prefs=prefs or MemoryPrefsStore(), dining=dining)
+    def make(**env):
+        return create_app(load_settings({"MEALSCHOLAR_HOME": str(tmp_path), **env}))
 
     return make
 
 
 def browser(app) -> TestClient:
     return TestClient(app, base_url="https://testserver")
-
-
-def register(client, email="sam@example.com") -> str:
-    res = client.post("/api/auth/register", json={"email": email, "password": PASSWORD})
-    assert res.status_code == 201
-    return res.json()["user"]["id"]
 
 
 def patch(client, body):
@@ -93,7 +44,6 @@ def patch(client, body):
 
 def test_defaults_until_anything_is_saved(make_app):
     client = browser(make_app())
-    register(client)
     res = client.get("/api/me/prefs")
     assert res.status_code == 200
     assert res.json() == DEFAULTS
@@ -102,7 +52,6 @@ def test_defaults_until_anything_is_saved(make_app):
 
 def test_patch_changes_only_what_it_sends(make_app):
     client = browser(make_app())
-    register(client)
 
     before = utc_now()
     res = patch(client, {"calorie_goal": 2200, "nutrient_goals": {"protein_g": 120, "sugars_g": 36.27}})
@@ -113,54 +62,29 @@ def test_patch_changes_only_what_it_sends(make_app):
     assert prefs == {**DEFAULTS, "calorie_goal": 2200, "nutrient_goals": goals, "updated_at": prefs["updated_at"]}
     assert before <= datetime.fromisoformat(prefs["updated_at"]) <= utc_now()
 
-    # nutrient_goals and notify merge into what is saved; null means no goal
-    prefs = patch(client, {"notify": {"email": True}, "nutrient_goals": {"sodium_mg": None}}).json()
-    assert prefs["notify"] == {"in_app": True, "email": True}
+    # nutrient_goals merges into what is saved; null means no goal
+    prefs = patch(client, {"onboarded": True, "nutrient_goals": {"sodium_mg": None}}).json()
+    assert prefs["onboarded"] is True
     assert prefs["nutrient_goals"] == {**goals, "sodium_mg": None}
     assert prefs["calorie_goal"] == 2200
-
-    # lists replace what is saved; names are matched without case and kept in their usual order
-    patch(client, {"dining_halls": [3, 4], "diets": ["Halal"]})
-    prefs = patch(
-        client,
-        {
-            "onboarded": True,
-            "dining_halls": [7, 1, 7],
-            "diets": ["  plant based", "Halal", "halal"],
-            "avoid_allergens": ["tree nuts", "Milk"],
-            "favorites": [{"name": "Pad Thai"}],
-        },
-    ).json()
-    assert prefs["onboarded"] is True
-    assert prefs["dining_halls"] == [7, 1]  # the first one is the user's main hall
-    assert prefs["diets"] == ["Halal", "Plant Based"]
-    assert prefs["avoid_allergens"] == ["Milk", "Tree Nuts"]
-    assert prefs["favorites"] == [{"name": "Pad Thai"}]
     assert client.get("/api/me/prefs").json() == prefs
 
-    cleared = patch(client, {"calorie_goal": None, "diets": [], "favorites": [], "dining_halls": []}).json()
-    assert cleared == {
-        **prefs,
-        "calorie_goal": None,
-        "diets": [],
-        "favorites": [],
-        "dining_halls": [],
-        "updated_at": cleared["updated_at"],
-    }
+    cleared = patch(client, {"calorie_goal": None}).json()
+    assert cleared == {**prefs, "calorie_goal": None, "updated_at": cleared["updated_at"]}
 
 
 def test_ranges_are_off_until_switched_on(make_app):
     """show_ranges only changes what the app shows; it is a plain flag that round-trips."""
-    store = MemoryPrefsStore()
-    client = browser(make_app(prefs=store))
-    user_id = register(client)
+    app = make_app()
+    client = browser(app)
+    store = app.state.prefs.store
     assert client.get("/api/me/prefs").json()["show_ranges"] is False
 
     on = patch(client, {"show_ranges": True})
     assert on.status_code == 200
     assert on.json()["show_ranges"] is True
     assert client.get("/api/me/prefs").json() == on.json()
-    assert store.get(user_id) == {"show_ranges": True, "updated_at": store.get(user_id)["updated_at"]}
+    assert store.get() == {"show_ranges": True, "updated_at": store.get()["updated_at"]}
 
     # the other fields are untouched, and the flag goes back off on its own
     patch(client, {"calorie_goal": 2000})
@@ -174,56 +98,30 @@ def test_ranges_are_off_until_switched_on(make_app):
 
 def test_what_get_returns_can_be_sent_back(make_app):
     """updated_at is the server's: a client may send it back, and it is ignored."""
-    store = MemoryPrefsStore()
-    client = browser(make_app(prefs=store))
-    user_id = register(client)
+    app = make_app()
+    client = browser(app)
 
     assert patch(client, {}).json() == DEFAULTS  # nothing to change, nothing saved
     assert patch(client, {"updated_at": "2020-01-01T00:00:00Z"}).json() == DEFAULTS
-    assert store.get(user_id) is None
+    assert app.state.prefs.store.get() is None
 
-    saved = patch(client, {"onboarded": True, "favorites": [{"name": "Pad Thai"}], "notify": {"in_app": False}}).json()
+    saved = patch(client, {"onboarded": True, "show_ranges": True, "nutrient_goals": {"fat_g": 70}}).json()
     again = patch(client, saved)
     assert again.status_code == 200
     assert again.json() == {**saved, "updated_at": again.json()["updated_at"]}
     assert again.json()["updated_at"] >= saved["updated_at"]
 
 
-def test_favorites_are_deduplicated_and_stored_with_a_key(make_app):
-    store = MemoryPrefsStore()
-    client = browser(make_app(prefs=store))
-    user_id = register(client)
-
-    tso, fullwidth_pad_thai = "General Tso\u2019s Chicken", "\uff30\uff41\uff44 Thai"  # a curly quote; wide letters
-    names = [f"  {tso.replace(' ', '   ')} ", "general tso's chicken", fullwidth_pad_thai, "PAD THAI", "Pad thai"]
-    res = patch(client, {"favorites": [{"name": name} for name in names]})
-    assert res.json()["favorites"] == [{"name": tso}, {"name": fullwidth_pad_thai}]
-    assert store.get(user_id)["favorites"] == [
-        {"name": tso, "key": "general tso's chicken"},
-        {"name": fullwidth_pad_thai, "key": "pad thai"},
-    ]
-
-    fifty_and_a_repeat = [{"name": f"Dish {i}"} for i in range(50)] + [{"name": "dish 0"}]
-    assert len(patch(client, {"favorites": fifty_and_a_repeat}).json()["favorites"]) == 50  # repeats don't count
-
-
-def test_dish_key():
-    assert dish_key("  General Tso\u2019s   CHICKEN ") == "general tso's chicken"
-    assert dish_key("\uff30\uff41\uff44 Thai") == "pad thai"
-    assert dish_key("Crème Brûlée") == dish_key("Cre\u0300me Bru\u0302le\u0301e")
-    assert dish_key("\u201cSpecial\u201d \u2013 Soup") == '"special" - soup'
+def test_prefs_survive_a_restart(make_app):
+    """They live in the diary database beside the meals, so a new server on the same home has them."""
+    saved = patch(browser(make_app()), {"onboarded": True, "calorie_goal": 1800, "nutrient_goals": {"fiber_g": 35}})
+    assert saved.status_code == 200
+    assert browser(make_app()).get("/api/me/prefs").json() == saved.json()
 
 
 # --- validation ---------------------------------------------------------------
 
 CALORIES = "Choose a calorie goal from 500 to 6,000, or none."
-HALL_IDS = "Send dining_halls as a list of location ids."
-DIETS = "Choose diets from Halal, Local, Plant Based and Vegetarian."
-ALLERGENS = (
-    "Choose allergens from Corn, Milk, Soy, Gluten, Wheat, Eggs, Sesame, Fish, Tree Nuts, Shellfish and Peanuts."
-)
-FAVORITES = 'Send favorites as a list of {"name": ...} objects.'
-FAVORITE_LENGTH = "Keep each favorite between 2 and 120 characters."
 
 
 @pytest.mark.parametrize(
@@ -271,34 +169,6 @@ FAVORITE_LENGTH = "Keep each favorite between 2 and 120 characters."
             "Unknown field: nutrient_goals.vitamin_c_mg.",
         ),
         ({"nutrient_goals": {"$gt": 1}}, "nutrient_goals", "Unknown field."),
-        ({"dining_halls": 1}, "dining_halls", HALL_IDS),
-        ({"dining_halls": [1, "2"]}, "dining_halls", HALL_IDS),
-        ({"dining_halls": [0]}, "dining_halls", HALL_IDS),
-        ({"dining_halls": [1.0]}, "dining_halls", HALL_IDS),
-        ({"dining_halls": [True]}, "dining_halls", HALL_IDS),
-        ({"dining_halls": [2**31]}, "dining_halls", HALL_IDS),
-        ({"dining_halls": [{"$ne": 0}]}, "dining_halls", HALL_IDS),
-        ({"dining_halls": list(range(1, 12))}, "dining_halls", "Choose up to 10 dining locations."),
-        ({"diets": ["Keto"]}, "diets", DIETS),
-        ({"diets": "Halal"}, "diets", DIETS),
-        ({"diets": [None]}, "diets", DIETS),
-        ({"avoid_allergens": ["Nuts"]}, "avoid_allergens", ALLERGENS),
-        ({"avoid_allergens": [["Milk"]]}, "avoid_allergens", ALLERGENS),
-        ({"favorites": "Pad Thai"}, "favorites", FAVORITES),
-        ({"favorites": ["Pad Thai"]}, "favorites", FAVORITES),
-        ({"favorites": [{}]}, "favorites", FAVORITES),
-        ({"favorites": [{"name": "Pad Thai", "key": "x"}]}, "favorites", FAVORITES),
-        ({"favorites": [{"name": {"$ne": ""}}]}, "favorites", FAVORITES),
-        ({"favorites": [{"name": "P"}]}, "favorites", FAVORITE_LENGTH),
-        ({"favorites": [{"name": "  P \n "}]}, "favorites", FAVORITE_LENGTH),
-        ({"favorites": [{"name": "x" * 121}]}, "favorites", FAVORITE_LENGTH),
-        ({"favorites": [{"name": "x" * 5000}]}, "favorites", FAVORITE_LENGTH),
-        ({"favorites": [{"name": "Pad\x00Thai"}]}, "favorites", "A favorite has characters that can't be used."),
-        ({"favorites": [{"name": f"Dish {i}"} for i in range(51)]}, "favorites", "Keep your favorites to 50 or fewer."),
-        ({"notify": True}, "notify", "Send notify as an object."),
-        ({"notify": {"email": "yes"}}, "notify.email", "Set notify.email to true or false."),
-        ({"notify": {"in_app": None}}, "notify.in_app", "Set notify.in_app to true or false."),
-        ({"notify": {"sms": True}}, "notify.sms", "Unknown field: notify.sms."),
         ({"show_ranges": "yes"}, "show_ranges", "Set show_ranges to true or false."),
         ({"show_ranges": 1}, "show_ranges", "Set show_ranges to true or false."),
         ({"show_ranges": None}, "show_ranges", "Set show_ranges to true or false."),
@@ -310,7 +180,6 @@ FAVORITE_LENGTH = "Keep each favorite between 2 and 120 characters."
 )
 def test_patch_says_which_field_is_wrong(make_app, body, field, detail):
     client = browser(make_app())
-    register(client)
     res = patch(client, body)
     assert res.status_code == 400
     assert res.json() == ({"detail": detail, "field": field} if field else {"detail": detail})
@@ -318,28 +187,44 @@ def test_patch_says_which_field_is_wrong(make_app, body, field, detail):
 
 
 @pytest.mark.parametrize(
-    ("content", "field"),
+    "body",
     [
-        (b'{"nutrient_goals": {"protein_g": NaN}}', "nutrient_goals.protein_g"),
-        (b'{"nutrient_goals": {"protein_g": Infinity}}', "nutrient_goals.protein_g"),
-        (b'{"nutrient_goals": {"protein_g": 1e999}}', "nutrient_goals.protein_g"),
-        (b'{"favorites": [{"name": "Pad \\ud800 Thai"}]}', "favorites"),  # a lone surrogate
+        {"dining_halls": [1]},
+        {"diets": ["Halal"]},
+        {"avoid_allergens": ["Milk"]},
+        {"favorites": [{"name": "Pad Thai"}]},
+        {"notify": {"email": True}},
     ],
 )
-def test_numbers_and_text_json_allows_but_prefs_dont(make_app, content, field):
+def test_settings_of_the_removed_campus_and_account_features_are_unknown(make_app, body):
+    """An app cached from before the change may still send them; they are refused, not kept."""
     client = browser(make_app())
-    register(client)
+    (name,) = body
+    res = patch(client, {"onboarded": True, **body})
+    assert (res.status_code, res.json()) == (400, {"detail": f"Unknown field: {name}.", "field": name})
+    assert client.get("/api/me/prefs").json() == DEFAULTS
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b'{"nutrient_goals": {"protein_g": NaN}}',
+        b'{"nutrient_goals": {"protein_g": Infinity}}',
+        b'{"nutrient_goals": {"protein_g": 1e999}}',
+    ],
+)
+def test_numbers_json_allows_but_prefs_dont(make_app, content):
+    client = browser(make_app())
     res = client.patch("/api/me/prefs", content=content, headers={"Content-Type": "application/json"})
     assert res.status_code == 400
-    assert res.json()["field"] == field
+    assert res.json()["field"] == "nutrient_goals.protein_g"
 
 
 def test_a_rejected_patch_saves_nothing(make_app):
     client = browser(make_app())
-    register(client)
-    saved = patch(client, {"calorie_goal": 2000, "diets": ["Halal"]}).json()
-    res = patch(client, {"calorie_goal": 2500, "favorites": [{"name": "Pad Thai"}], "diets": ["Keto"]})
-    assert res.status_code == 400 and res.json()["field"] == "diets"
+    saved = patch(client, {"calorie_goal": 2000, "show_ranges": True}).json()
+    res = patch(client, {"calorie_goal": 2500, "nutrient_goals": {"protein_g": 100}, "show_ranges": "yes"})
+    assert res.status_code == 400 and res.json()["field"] == "show_ranges"
     assert client.get("/api/me/prefs").json() == saved
 
 
@@ -349,7 +234,6 @@ def test_a_rejected_patch_saves_nothing(make_app):
 )
 def test_patch_needs_a_json_object(make_app, content):
     client = browser(make_app())
-    register(client)
     res = client.patch("/api/me/prefs", content=content, headers={"Content-Type": "application/json"})
     assert res.status_code == 400
     assert res.json() == NOT_AN_OBJECT
@@ -357,8 +241,7 @@ def test_patch_needs_a_json_object(make_app, content):
 
 def test_patch_bodies_are_capped(make_app):
     client = browser(make_app())
-    register(client)
-    parts = [b'{"favorites": [', b'{"name": "Pad Thai"}, ' * 2000, b'{"name": "Pad Thai"}]}']
+    parts = [b'{"nutrient_goals": {', b'"protein_g": 50, ' * 3000, b'"protein_g": 50}}']
     res = client.patch("/api/me/prefs", content=b"".join(parts), headers={"Content-Type": "application/json"})
     assert res.status_code == 413 and res.json() == TOO_LARGE
     chunks = iter(parts)  # sent without Content-Length
@@ -367,61 +250,12 @@ def test_patch_bodies_are_capped(make_app):
     assert client.get("/api/me/prefs").json() == DEFAULTS
 
 
-def test_dining_halls_must_exist_when_menus_are_connected(make_app):
-    client = browser(make_app(dining=Dining(HallsOnly())))
-    register(client)
-    res = patch(client, {"dining_halls": [1, 999]})
-    assert res.status_code == 400
-    assert res.json() == {"detail": "Unknown dining location: 999.", "field": "dining_halls"}
-    assert patch(client, {"dining_halls": [7, 1]}).json()["dining_halls"] == [7, 1]
-
-    offline = browser(make_app())  # without the menus, ids can't be checked, so any is kept
-    register(offline)
-    assert patch(offline, {"dining_halls": [999]}).json()["dining_halls"] == [999]
-
-
 def test_goal_limits_cover_every_goal():
     assert set(GOAL_MAX) == set(NutrientGoals.model_fields)
 
 
-# --- who sees what ------------------------------------------------------------
-
-
-def test_prefs_need_a_session(make_app):
-    client = browser(make_app())
-    for res in (client.get("/api/me/prefs"), patch(client, {"onboarded": True})):
-        assert res.status_code == 401
-        assert res.json() == SIGN_IN
-
-
-def test_without_required_sign_in_the_local_user_has_prefs(make_app):
-    store = MemoryPrefsStore()
-    client = browser(make_app(prefs=store, MEALSCHOLAR_AUTH_REQUIRED="0"))
-    assert client.get("/api/me/prefs").json() == DEFAULTS
-    assert patch(client, {"calorie_goal": 1800}).json()["calorie_goal"] == 1800
-    assert store.get(LOCAL_USER)["calorie_goal"] == 1800
-
-    user_id = register(client)  # signing in still works, and then the account's own prefs are used
-    assert client.get("/api/me/prefs").json() == DEFAULTS
-    patch(client, {"calorie_goal": 2400})
-    assert (store.get(user_id)["calorie_goal"], store.get(LOCAL_USER)["calorie_goal"]) == (2400, 1800)
-
-
-def test_users_only_see_their_own_prefs(make_app):
-    app = make_app()
-    sam, alex = browser(app), browser(app)
-    register(sam, "sam@example.com")
-    register(alex, "alex@example.com")
-
-    mine = patch(sam, {"favorites": [{"name": "Pad Thai"}], "notify": {"email": True}}).json()
-    assert alex.get("/api/me/prefs").json() == DEFAULTS
-    patch(alex, {"calorie_goal": 3000})
-    assert sam.get("/api/me/prefs").json() == mine
-
-
 def test_cross_site_patches_are_refused(make_app):
     client = browser(make_app())
-    register(client)
     res = client.patch("/api/me/prefs", json={"onboarded": True}, headers={"Origin": "https://evil.example"})
     assert res.status_code == 403
     assert client.get("/api/me/prefs").json()["onboarded"] is False
@@ -430,81 +264,20 @@ def test_cross_site_patches_are_refused(make_app):
 # --- storage ------------------------------------------------------------------
 
 
-def test_memory_store_sets_dotted_paths_and_lists_email_subscribers():
-    store = MemoryPrefsStore()
-    assert store.get("u1") is None
-    assert store.update("u1", {"notify.email": True, "nutrient_goals.protein_g": 90.0}) == {
-        "notify": {"email": True},
+def test_store_sets_dotted_paths_and_forgets(tmp_path):
+    store = PrefsStore(tmp_path / "diary.sqlite")
+    assert store.get() is None
+    assert store.update({"onboarded": True, "nutrient_goals.protein_g": 90.0}) == {
+        "onboarded": True,
         "nutrient_goals": {"protein_g": 90.0},
     }
-    store.update("u1", {"notify.in_app": False, "favorites": [{"name": "Pad Thai", "key": "pad thai"}]})
-    store.update("u2", {"notify.email": False})
-    store.update("u3", {"onboarded": True})
-    assert [user_id for user_id, _ in store.with_email_alerts()] == ["u1"]
+    store.update({"nutrient_goals.sodium_mg": None, "show_ranges": True})
 
-    store.get("u1")["notify"]["email"] = False  # callers get copies
-    prefs = Prefs.model_validate(store.get("u1"))
-    assert (prefs.notify.email, prefs.notify.in_app, prefs.nutrient_goals.protein_g) == (True, False, 90.0)
+    store.get()["nutrient_goals"]["protein_g"] = 1.0  # callers get copies
+    prefs = Prefs.model_validate(PrefsStore(tmp_path / "diary.sqlite").get())  # and so does a new store
+    assert (prefs.onboarded, prefs.show_ranges) == (True, True)
+    assert (prefs.nutrient_goals.protein_g, prefs.nutrient_goals.sodium_mg) == (90.0, None)
     assert prefs.nutrient_goals.carbs_g == 275  # unset goals keep their defaults
-    assert [(f.name, f.key) for f in prefs.favorites] == [("Pad Thai", "pad thai")]
 
-
-class RecordingCollection:
-    """Stands in for the user_prefs collection and records each call."""
-
-    def __init__(self, docs=()):
-        self.docs = list(docs)
-        self.calls = []
-
-    def create_index(self, keys, **options):
-        self.calls.append(("create_index", keys))
-
-    def find_one(self, query, projection=None):
-        self.calls.append(("find_one", query, projection))
-        return None
-
-    def find_one_and_update(self, query, update, **options):
-        self.calls.append(("find_one_and_update", query, update, options))
-        return {"onboarded": True}
-
-    def find(self, query, projection=None):
-        self.calls.append(("find", query, projection))
-        return iter(copy.deepcopy(self.docs))
-
-
-def test_mongo_store_queries():
-    """Only the user id string and the checked $set reach MongoDB."""
-    collection = RecordingCollection([{"_id": "u1", "notify": {"email": True}}])
-    store = MongoPrefsStore({"user_prefs": collection})
-    store.ensure_indexes()
-    service = PrefsService(store, clock=lambda: datetime(2026, 11, 14, 17, 0))
-    assert service.get("u1") == Prefs()
-    body = {"favorites": [{"name": " Pad  Thai "}], "notify": {"email": True}, "nutrient_goals": {"fat_g": 70}}
-    assert service.update("u1", body).onboarded is True
-    assert store.with_email_alerts() == [("u1", {"notify": {"email": True}})]
-    with pytest.raises(TypeError):
-        store.get({"$ne": None})
-
-    assert collection.calls == [
-        ("create_index", "notify.email"),
-        ("find_one", {"_id": "u1"}, {"_id": False}),
-        (
-            "find_one_and_update",
-            {"_id": "u1"},
-            {
-                "$set": {
-                    "favorites": [{"name": "Pad Thai", "key": "pad thai"}],
-                    "notify.email": True,
-                    "nutrient_goals.fat_g": 70.0,
-                    "updated_at": datetime(2026, 11, 14, 17, 0),
-                }
-            },
-            {"projection": {"_id": False}, "upsert": True, "return_document": ReturnDocument.AFTER},
-        ),
-        ("find", {"notify.email": True}, None),
-    ]
-
-
-def test_dining_database_setting():
-    assert load_settings({}).dining_db == "umass_dining"
-    assert load_settings({"MEALSCHOLAR_DINING_DB": "umass_dining_copy"}).dining_db == "umass_dining_copy"
+    store.delete()
+    assert store.get() is None

@@ -1,5 +1,10 @@
 # MealScholar TODO
 
+> **November 17, 2026:** accounts/login and the UMass Dining integration (campus menus, dining
+> halls, favorites, alerts, hall cams, MongoDB Atlas, SMTP email) were removed; nutrition now
+> comes only from USDA FoodData Central and the app keeps one local diary without sign-in. Items
+> below about accounts, email, campus menus, halls, favorites, cams or Atlas are obsolete.
+
 Updated November 14, 2026 after a live-site audit starting at 22:22 UTC. Owners follow `AGENTS.md`; deadlines follow `TIMELINE.md`.
 Section 0 is the current website priority order. Sections 1–6 retain the existing project backlog, with confirmed stale items reconciled. An unchecked verification task is not a confirmed defect.
 Tick a box only when its acceptance criteria are observed. Post contract and deployment changes on the board.

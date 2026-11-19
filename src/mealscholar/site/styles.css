@@ -81,12 +81,6 @@
   --install-scrim: rgba(28, 28, 28, .42);
   --install-ink-2: #4A4A48;
 
-  /* Menu rows that aren't in the person's diet: a warm band, an edge and a tag. */
-  --off-bg: #F6ECD6;
-  --off-edge: #C0892A;
-  --off-tag: #ECD7A6;
-  --off-ink: #5A3C00;
-
   --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
@@ -151,10 +145,6 @@
   --scrim: rgba(0, 0, 0, 0.6);
   --install-scrim: rgba(0, 0, 0, 0.6);
   --install-ink-2: #C4C6C7;
-  --off-bg: #2A2416;
-  --off-edge: #C99A45;
-  --off-tag: #4A3B19;
-  --off-ink: #F2D592;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.32);
   --shadow-lift: 0 2px 6px rgba(0, 0, 0, 0.5), 0 18px 44px rgba(0, 0, 0, 0.6);
 }
@@ -268,12 +258,8 @@ main:focus,
 .dash-head__greeting,
 .field-error,
 .form-error,
-.notice,
 .banner,
-.account__email,
-.account__confirm,
 .delete__ask,
-.sent,
 .lede,
 .sheet__title {
   overflow-wrap: anywhere;
@@ -408,57 +394,10 @@ main:focus,
   margin-left: auto;
 }
 
-/* "Piloting at UMass": the UMass mark keeps its own maroon; the badge itself stays neutral. */
-.pilot {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex: none;
-  padding: 5px 11px 5px 7px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  font: 500 0.78125rem / 1 var(--font-sans);
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  box-shadow: 0 1px 2px rgba(28, 28, 28, 0.04);
-}
-
-.pilot__m {
-  width: 21px;
-  height: 18px;
-  flex: none;
-}
-
-/* Signed in on a narrow phone: the badge keeps its mark and the account button fits beside it. */
-@media (max-width: 29.99em) {
-  body[data-account="on"] .pilot,
-  body[data-prefs="on"] .pilot {
-    padding: 7px 8px;
-  }
-
-  body[data-account="on"] .pilot__text,
-  body[data-prefs="on"] .pilot__text {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
-}
-
 @media (max-width: 22.49em) {
   .brand {
     font-size: 1.0625rem;
     gap: 8px;
-  }
-
-  .pilot {
-    padding-right: 9px;
-    font-size: 0.71875rem;
   }
 }
 
@@ -488,13 +427,6 @@ main:focus,
   button.avatar:hover {
     background: var(--ink-hover);
   }
-}
-
-.avatar--lg {
-  width: 56px;
-  height: 56px;
-  font-size: 1.25rem;
-  cursor: default;
 }
 
 /* ---------------------------------------------------------------- the dock */
@@ -633,11 +565,10 @@ main:focus,
   animation: view-in-alt var(--dur-2) var(--ease-out);
 }
 
-/* One view at a time: a tab (Today, or a logged meal over it; Menu; Week), or the capture screen
+/* One view at a time: a tab (Today, or a logged meal over it; Week), or the capture screen
    (a photo being read, then its result). */
 body:not([data-view="analyze"]) #capture,
 body:not([data-view="today"]) #today,
-body:not([data-view="menu"]) #menu,
 body:not([data-view="week"]) #week,
 body[data-result] #capture,
 body[data-result] #today {
@@ -664,25 +595,10 @@ body[data-screen="boot"]::after {
   animation: spin 700ms linear infinite, fade-in 200ms linear 500ms forwards;
 }
 
-/* Account screens replace the app. */
-body[data-screen="auth"] :is(#today, #menu, #week, #capture, #result, .dock, .rail, .plus) {
-  display: none !important;
-}
-
-body:not([data-screen="auth"]) #auth {
-  display: none;
-}
-
 @media (max-width: 63.99em) {
   html {
     scroll-padding-bottom: calc(var(--tab-space) + 8px);
   }
-}
-
-.view-head {
-  display: grid;
-  gap: 8px;
-  padding: 8px 4px 4px;
 }
 
 .view-title {
@@ -716,10 +632,6 @@ body:not([data-screen="auth"]) #auth {
   padding-block: 12px;
   margin-block: -12px;
   border-radius: 6px;
-}
-
-body[data-screen="auth"] .footer {
-  padding-bottom: calc(32px + var(--safe-bottom));
 }
 
 /* Appearance in Settings: System, Light or Dark as native radios drawn like the tab bar, the choice in ink. */
@@ -772,11 +684,6 @@ body[data-screen="auth"] .footer {
     background: var(--surface-2);
     color: var(--ink);
   }
-}
-
-.loading {
-  padding: 8px 4px;
-  color: var(--ink-2);
 }
 
 /* ------------------------------------------------------------------ buttons */
@@ -2030,9 +1937,8 @@ body[data-screen="auth"] .footer {
   grid-column: 1 / -1;
 }
 
-/* Where the numbers come from: a tag (the hall's own label, filled; USDA, outlined), then the dish
-   or USDA food, and under it the details. On a phone the text runs on after the tag; with room, it
-   hangs in a column beside it. */
+/* Where the numbers come from: a tag, then the USDA food, and under it the details. On a phone the
+   text runs on after the tag; with room, it hangs in a column beside it. */
 .item__match {
   font-size: 0.875rem;
   line-height: 1.45;
@@ -2044,7 +1950,6 @@ body[data-screen="auth"] .footer {
   color: var(--ink);
 }
 
-.item__why,
 .item__id {
   display: block;
   margin-top: 2px;
@@ -2066,7 +1971,7 @@ body[data-screen="auth"] .footer {
     margin-right: 0;
   }
 
-  .item__match:not(.is-missing) :is(.item__why, .item__id) {
+  .item__match:not(.is-missing) .item__id {
     grid-column: 2;
     margin-top: 0;
   }
@@ -2092,17 +1997,6 @@ body[data-screen="auth"] .footer {
   width: 13px;
   height: 13px;
   stroke-width: 2.2;
-}
-
-.src--label {
-  background: var(--ink);
-  color: var(--on-ink);
-}
-
-.src--usda {
-  padding-inline: 9px;
-  border-color: var(--line-strong);
-  letter-spacing: 0.08em;
 }
 
 /* No USDA match yet: an empty slot to fill, so a dashed outline rather than an alarm. */
@@ -2439,9 +2333,7 @@ body[data-screen="auth"] .footer {
   display: contents;
 }
 
-/* The markup puts the side column (the upcoming meal) after the middle column, so keyboard and
-   reading order follow the laptop columns left to right; in the phone and tablet stack the week
-   chart and the vitamins card still come after it. */
+/* In the phone and tablet stack the week chart and the vitamins card come after the other blocks. */
 .week-block,
 .micro-card {
   order: 1;
@@ -3305,8 +3197,7 @@ body[data-screen="auth"] .footer {
 }
 
 /* Headings that take focus after Try again, like the view titles. */
-.section-title:focus,
-.menu-card__meal:focus {
+.section-title:focus {
   outline: none;
 }
 
@@ -3464,8 +3355,7 @@ body[data-screen="auth"] .footer {
   margin-top: 10px;
 }
 
-.banner .banner__actions,
-.banner .banner__status {
+.banner .banner__actions {
   grid-column: 1 / -1;
 }
 
@@ -3473,44 +3363,12 @@ body[data-screen="auth"] .footer {
   flex: 1 1 auto;
 }
 
-.banner__status {
-  font-size: 0.875rem;
-  color: var(--ink-2);
-}
-
-.banner__status:empty {
-  display: none;
-}
-
-.banner__status.is-error {
-  color: var(--danger);
-  font-weight: 500;
-}
-
 /* -------------------------------------------------------------- account screens */
-
-.auth {
-  width: 100%;
-  max-width: 30rem;
-  margin-inline: auto;
-}
-
-.auth-screen {
-  display: grid;
-  gap: 18px;
-  min-width: 0;
-}
 
 .auth-head {
   display: grid;
   gap: 8px;
   padding: 8px 4px 0;
-}
-
-.auth-wait {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .auth-badge {
@@ -3543,13 +3401,6 @@ body[data-screen="auth"] .footer {
   font: 500 0.9375rem / 1.3 var(--font-sans);
 }
 
-.form-field__optional {
-  margin-left: 4px;
-  color: var(--ink-2);
-  font-weight: 400;
-  font-size: 0.875rem;
-}
-
 .form-field__hint {
   margin-top: -2px;
   font-size: 0.875rem;
@@ -3573,197 +3424,6 @@ body[data-screen="auth"] .footer {
   margin-top: 1px;
 }
 
-/* Passwords: Show and Hide sit inside the field, a full 44px tall. */
-.pw {
-  position: relative;
-  display: block;
-}
-
-.pw .field {
-  padding-right: 88px;
-}
-
-.pw__toggle {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  bottom: 4px;
-  min-width: 68px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--surface-2);
-  color: var(--ink);
-  font: 500 0.9375rem / 1 var(--font-sans);
-  cursor: pointer;
-}
-
-@media (hover: hover) {
-  .pw__toggle:hover {
-    background: var(--line);
-  }
-}
-
-.form__aside {
-  display: flex;
-  justify-content: flex-end;
-  margin: -12px -4px -6px 0;
-}
-
-.auth-switch {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0 4px;
-  color: var(--ink-2);
-  text-align: center;
-}
-
-.auth-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 0 4px;
-  font-size: 0.875rem;
-  line-height: 1.45;
-  color: var(--ink-2);
-}
-
-.auth-note .icon,
-.notice .icon {
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-}
-
-/* A calm message, such as a sign-in that ended. It takes focus so it is read first. */
-.notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: var(--radius-field);
-  background: var(--warm);
-  color: var(--ink);
-  font-size: 0.9375rem;
-}
-
-.notice:focus {
-  outline: none;
-}
-
-.sent {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 14px;
-  padding: 18px;
-  font-size: 1.0625rem;
-}
-
-.sent__icon {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--warm);
-}
-
-/* Welcome: what the app does, an example, and two ways in. */
-.auth-screen--welcome {
-  gap: 20px;
-}
-
-.welcome__sample {
-  display: grid;
-  gap: 4px;
-  padding: 16px 14px 14px;
-}
-
-.welcome__sample .eyebrow {
-  padding-inline: 4px;
-}
-
-.welcome__sample-title {
-  padding-inline: 4px;
-  font: 300 1.625rem / 1.15 var(--font-sans);
-  letter-spacing: -0.02em;
-}
-
-.welcome__sample .total {
-  margin-top: 10px;
-}
-
-.welcome__sample .total__value {
-  font-size: 2.75rem;
-}
-
-.welcome__foods {
-  display: grid;
-  margin-top: 6px;
-}
-
-.welcome__foods li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 4px;
-  font-size: 0.9375rem;
-}
-
-.welcome__foods li + li {
-  border-top: 1px solid var(--line);
-}
-
-.welcome__actions {
-  display: grid;
-  gap: 10px;
-}
-
-.welcome__fine {
-  margin-top: 4px;
-  font-size: 0.875rem;
-  text-align: center;
-  color: var(--ink-2);
-}
-
-/* The account sheet. Log out sits beside the email while the email fits on one line there, else it
-   drops under it; the email always stays beside the avatar (56px and its 14px gap). */
-.account__id {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px;
-}
-
-.account__who {
-  display: grid;
-  flex: 1 1 auto;
-  gap: 6px;
-  min-width: 0;
-  max-width: calc(100% - 70px);
-}
-
-.account__email {
-  font-size: 1rem;
-}
-
-.account__confirm {
-  display: grid;
-  gap: 2px;
-  padding: 14px;
-  border-radius: var(--radius-inner);
-  background: var(--warm);
-  font-size: 0.9375rem;
-}
-
-.account__since {
-  font-size: 0.875rem;
-  color: var(--ink-2);
-}
-
 .account__section {
   display: grid;
   gap: 12px;
@@ -3776,10 +3436,6 @@ body[data-screen="auth"] .footer {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--label);
-}
-
-.account__status {
-  padding: 0;
 }
 
 /* ---------------------------------------------------------------- the sheet */
@@ -4088,10 +3744,6 @@ html.has-sheet {
   transform: none;
 }
 
-body[data-screen="auth"] .toast {
-  bottom: calc(var(--safe-bottom) + 24px);
-}
-
 /* ------------------------------------------------------------ wider screens */
 
 @media (min-width: 40em) {
@@ -4323,59 +3975,6 @@ body[data-screen="auth"] .toast {
     flex: none;
   }
 
-  .banner .banner__status {
-    grid-column: 2 / -1;
-  }
-
-  /* Welcome: the words and ways in on the left, the example on the right. */
-  .auth[data-screen="welcome"] {
-    display: grid;
-    align-content: center;
-    max-width: none;
-    min-height: calc(100svh - var(--bar-h) - 180px);
-    padding-block: 24px;
-  }
-
-  .auth-screen--welcome {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 28rem);
-    grid-template-areas:
-      "head sample"
-      "actions sample";
-    column-gap: 56px;
-    align-items: center;
-  }
-
-  .welcome__head {
-    grid-area: head;
-    align-self: end;
-  }
-
-  .welcome__head .view-title {
-    font-size: 3.5rem;
-  }
-
-  .welcome__sample {
-    grid-area: sample;
-  }
-
-  .welcome__actions {
-    grid-area: actions;
-    align-self: start;
-    max-width: 26rem;
-  }
-
-  .welcome__fine {
-    text-align: left;
-  }
-
-  /* Short account screens sit in the middle of the window, not stranded at the top. */
-  .auth:not([data-screen="welcome"]) {
-    display: grid;
-    align-content: center;
-    min-height: calc(100svh - var(--bar-h) - 180px);
-    padding-block: 24px;
-  }
-
   .footer {
     padding: 8px 36px 48px;
   }
@@ -4594,25 +4193,8 @@ html.install-open {
 
 /* ------------------------------------------------------------ preferences */
 /* Everything from here on exists only with the preferences layer (body[data-prefs="on"]): goals on
-   the dashboard, the laptop columns, the set-up steps, Settings, the alerts bell and the menus.
-   Without it, none of these rules match and the page is as it was. */
-
-/* The alerts bell in the top bar, with a dot while a favorite is on the menu this week. */
-.bell {
-  position: relative;
-}
-
-.bell__dot {
-  position: absolute;
-  top: 9px;
-  right: 9px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--ink);
-  box-shadow: 0 0 0 2px var(--surface-2);
-  animation: pop-in var(--dur-2) var(--ease-out);
-}
+   the dashboard, the laptop columns, the set-up steps and Settings. Without it, none of these rules
+   match and the page is as it was. */
 
 /* The account button without an account: a gear for Settings. */
 .avatar--gear {
@@ -4667,36 +4249,6 @@ html.install-open {
   font-family: var(--font-sans);
   font-size: 0.8125rem;
   font-weight: 500;
-  color: var(--ink);
-}
-
-/* The nearest dining hall, under a result and in the side column. */
-.nearest-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.nearest-note .icon {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  color: var(--ink);
-}
-
-.nearest-note--result {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--warm);
-  color: var(--ink);
-}
-
-.nearest-note--picker {
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--warm);
   color: var(--ink);
 }
 
@@ -4837,217 +4389,6 @@ html.install-open {
   display: grid;
   gap: 12px;
   padding: 0 16px 16px;
-}
-
-/* ---- the upcoming meal: the right column on laptops, a card on phones */
-
-.upcoming {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-  padding: 18px 18px 14px;
-}
-
-.upcoming__head {
-  display: grid;
-  gap: 4px;
-}
-
-.upcoming__hall {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 8px;
-  font: 500 1.0625rem / 1.3 var(--font-sans);
-  overflow-wrap: anywhere;
-}
-
-.upcoming__hall .link-btn {
-  font-size: 0.9375rem;
-}
-
-.upcoming__meal {
-  font-size: 1.25rem;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-}
-
-.upcoming__meal strong {
-  font-weight: 500;
-}
-
-.upcoming__when {
-  margin-left: 6px;
-  color: var(--ink-2);
-  font-size: 1rem;
-}
-
-.upcoming__hint {
-  margin-top: -6px;
-  font-size: 0.875rem;
-  color: var(--ink-2);
-}
-
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  font-size: 0.8125rem;
-  color: var(--ink-2);
-}
-
-.legend__item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.legend .icon {
-  width: 15px;
-  height: 15px;
-  stroke-width: 2.2;
-  color: var(--ink);
-}
-
-/* The star filled, as on the dishes. */
-.legend__item--fav .icon {
-  fill: var(--ink);
-}
-
-.legend__off {
-  width: 16px;
-  height: 14px;
-  border-radius: 2px 4px 4px 2px;
-  background: var(--off-bg);
-  box-shadow: inset 3px 0 0 var(--off-edge), inset 0 0 0 1px color-mix(in srgb, var(--off-edge) 35%, transparent);
-}
-
-/* The list is the one thing that scrolls in that column. Positioned, so the screen-reader-only
-   words in its rows (absolutely placed) stay inside it instead of stretching the page. */
-.dishes {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: 22rem;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  overflow: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-}
-
-.dishes:focus-visible {
-  outline-offset: -2px;
-}
-
-.dishes__groups {
-  display: grid;
-}
-
-.dishes__cat {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 10px 8px 4px;
-  background: var(--surface);
-  font: 500 0.75rem / 1.45 var(--font-sans);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--label);
-}
-
-.dishes__list {
-  display: grid;
-}
-
-.dish {
-  /* Positioned: the screen-reader-only words in a row are absolutely placed, and without this
-     Safari put the ones in a later column of the menu's multi-column list far below the row, which
-     stretched the page by hundreds of blank pixels (the "unlimited scroll" on the Menu tab). */
-  position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 2px 8px;
-  padding: 8px;
-  border-top: 1px solid var(--line);
-  font-size: 0.9375rem;
-  line-height: 1.35;
-}
-
-.dish__marks {
-  display: inline-flex;
-  gap: 2px;
-  min-width: 18px;
-  padding-top: 1px;
-  color: var(--ink);
-}
-
-.dish__marks .icon {
-  width: 17px;
-  height: 17px;
-  stroke-width: 2;
-}
-
-.dish.is-fav .dish__marks .icon:first-child {
-  fill: var(--ink);
-}
-
-.dish__text {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-
-.dish__name {
-  overflow-wrap: anywhere;
-}
-
-.dish__warn {
-  font-size: 0.8125rem;
-  color: var(--ink-2);
-}
-
-.dish__kcal {
-  color: var(--ink-2);
-  font: 400 0.8125rem / 1.5 var(--font-mono);
-  white-space: nowrap;
-}
-
-/* Not in the diet the person chose: still listed, on a warm band with an edge on the left and a
-   "Not in your diet" tag under the name. Color plus words, never color alone, and nothing fades:
-   the name keeps full ink (14:1 or more on the band in both themes). */
-.dish.is-off {
-  background: var(--off-bg);
-  box-shadow: inset 3px 0 0 var(--off-edge);
-}
-
-.dish.is-off + .dish.is-off {
-  border-top-color: color-mix(in srgb, var(--off-edge) 22%, var(--off-bg));
-}
-
-.dish__off {
-  justify-self: start;
-  margin-top: 3px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--off-tag);
-  color: var(--off-ink);
-  font: 500 0.75rem / 1.3 var(--font-sans);
-  letter-spacing: 0.01em;
-  /* One line even where the name column is narrow (1024px): the tag may run under the kcal. */
-  white-space: nowrap;
-}
-
-.upcoming__count {
-  font-size: 0.8125rem;
-  color: var(--ink-2);
-}
-
-.upcoming.is-skeleton {
-  gap: 12px;
-  min-height: 240px;
 }
 
 /* ---- Recently uploaded (the middle column on laptops) */
@@ -5323,7 +4664,7 @@ html.install-open {
   }
 }
 
-/* ---- the settings widgets: choices, pickers, chips, favorites, switches, the summary */
+/* ---- the settings widgets: choices, pickers, switches, the summary */
 
 .choices {
   display: grid;
@@ -5411,27 +4752,6 @@ html.install-open {
   font-size: 1.0625rem;
 }
 
-.halls {
-  display: grid;
-  gap: 12px;
-}
-
-.halls__find {
-  display: grid;
-  gap: 8px;
-  justify-items: start;
-}
-
-.halls__hint {
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  color: var(--ink-2);
-}
-
-.halls__note:empty {
-  display: none;
-}
-
 .picks {
   display: grid;
   gap: 8px;
@@ -5450,186 +4770,6 @@ html.install-open {
   background: var(--surface);
   cursor: pointer;
   transition: border-color var(--dur-1) linear, box-shadow var(--dur-1) linear;
-}
-
-/* The real checkbox stays for the keyboard and screen readers; the drawn box shows its state. */
-.pick__box {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.pick:has(.pick__box:checked) {
-  border-color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--ink);
-}
-
-.pick:has(.pick__box:focus-visible) {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
-
-.pick__check {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--on-ink);
-  box-shadow: inset 0 0 0 1.5px var(--line-strong);
-  transition: background-color var(--dur-1) linear, box-shadow var(--dur-1) linear;
-}
-
-.pick__check .icon {
-  width: 16px;
-  height: 16px;
-  stroke-width: 2.4;
-  opacity: 0;
-}
-
-.pick:has(.pick__box:checked) .pick__check {
-  background: var(--ink);
-  box-shadow: inset 0 0 0 1.5px var(--ink);
-}
-
-.pick:has(.pick__box:checked) .pick__check .icon {
-  opacity: 1;
-}
-
-.pick__text {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-
-.pick__name {
-  font-weight: 500;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.pick__area {
-  font-size: 0.8125rem;
-  color: var(--ink-2);
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.chip-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  font: 500 0.9375rem / 1 var(--font-sans);
-  cursor: pointer;
-  transition: background-color var(--dur-1) linear, border-color var(--dur-1) linear, color var(--dur-1) linear;
-}
-
-.chip-btn .icon {
-  display: none;
-  width: 16px;
-  height: 16px;
-  stroke-width: 2.4;
-}
-
-.chip-btn[aria-pressed="true"] {
-  padding-left: 12px;
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--on-ink);
-}
-
-.chip-btn[aria-pressed="true"] .icon {
-  display: block;
-}
-
-@media (hover: hover) {
-  .chip-btn:hover:not([aria-pressed="true"]) {
-    background: var(--surface-2);
-  }
-}
-
-.favorites {
-  display: grid;
-  gap: 10px;
-}
-
-.favs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.favs:empty {
-  display: none;
-}
-
-.fav {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  max-width: 100%;
-  min-height: 44px;
-  padding-left: 14px;
-  border-radius: 999px;
-  background: var(--warm);
-  color: var(--ink);
-  font: 500 0.9375rem / 1.2 var(--font-sans);
-}
-
-.fav__name {
-  overflow-wrap: anywhere;
-}
-
-.fav__x {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: none;
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.fav__x .icon {
-  width: 18px;
-  height: 18px;
-  stroke-width: 2.2;
-}
-
-@media (hover: hover) {
-  .fav__x:hover {
-    background: rgba(28, 28, 28, 0.08);
-  }
-}
-
-.favorites__empty {
-  font-size: 0.9375rem;
-  color: var(--ink-2);
-}
-
-.favorites__status {
-  padding: 0;
 }
 
 .switches {
@@ -5708,29 +4848,9 @@ html.install-open {
   outline: none;
 }
 
-.settings__nodining {
-  padding-top: 4px;
-}
-
-/* ---- the alerts and menu panel */
-
-.alerts {
-  gap: 8px;
-}
-
-.menu-meal + .menu-meal {
-  margin-top: 8px;
-}
-
-.loading .spinner {
-  display: inline-block;
-  vertical-align: -2px;
-  margin-right: 6px;
-}
-
 /* ---- the set-up steps */
 
-body[data-screen="onboard"] :is(#today, #menu, #week, #capture, #result, .dock, .rail, #account-button, #alerts-button, #plus-button) {
+body[data-screen="onboard"] :is(#today, #week, #capture, #result, .dock, .rail, #account-button, #plus-button) {
   display: none !important;
 }
 
@@ -5795,12 +4915,6 @@ body[data-screen="onboard"] .toast {
 
 .onboard__form {
   gap: 16px;
-}
-
-.onboard__name {
-  font: 400 1.375rem / 1.3 var(--font-sans);
-  letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
 }
 
 .onboard__actions {
@@ -5997,8 +5111,8 @@ body[data-screen="onboard"] .toast {
 /* Laptops: the sketch. The week strip on top. The dashboard is exactly the window's height, so the
    page itself never scrolls: the left column (calories, health score, nutrient tiles) is compact
    enough to fit and stays put under the bar, and the middle (Recently uploaded, then the footer)
-   and the right column (the upcoming meal) scroll inside themselves when they are taller than their
-   slot. The top bar's Snap a meal gives way to the round + button. */
+   scrolls inside itself when it is taller than its slot. The top bar's Snap a meal gives way to
+   the round + button. */
 @media (min-width: 64em) {
   body[data-prefs="on"] {
     --pin-top: calc(var(--bar-h) + var(--safe-top) + 16px);
@@ -6035,11 +5149,6 @@ body[data-screen="onboard"] .toast {
     grid-template-columns: minmax(0, 4fr) minmax(0, 5fr);
     grid-template-areas: "main mid";
     gap: 24px;
-  }
-
-  body[data-prefs="on"][data-dining="on"] .dash-grid {
-    grid-template-columns: minmax(0, 4fr) minmax(0, 5fr) minmax(0, 3.6fr);
-    grid-template-areas: "main mid side";
   }
 
   /* The view is the window less the top bar and the shell's 16px top and 24px bottom padding; the
@@ -6114,24 +5223,6 @@ body[data-screen="onboard"] .toast {
     max-width: none;
     margin: 0;
     padding: 0 4px 8px;
-  }
-
-  /* The side column only ever scrolls in a window too short for the card's head and five rows;
-     otherwise the card fits the column and its list is the one part that scrolls. */
-  body[data-prefs="on"] .dash-col--side {
-    grid-area: side;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    max-height: calc(100% + 12px);
-    margin: -6px -10px;
-    padding: 6px 10px 8px;
-    overflow-y: auto;
-  }
-
-  body[data-prefs="on"] .dash-col--side:empty {
-    display: none;
   }
 
   body[data-prefs="on"] :is(.hero, .stats-block, .meals-block, .dash-empty, .week-block, .dash-error, .micro-card) {
@@ -6314,18 +5405,6 @@ body[data-screen="onboard"] .toast {
     padding: 22px 20px 20px;
   }
 
-  body[data-prefs="on"] .dash-col--side .upcoming {
-    flex: none;
-    max-height: 100%;
-    overflow-y: auto;
-    scroll-padding-block: 6px;
-  }
-
-  body[data-prefs="on"] .dash-col--side .dishes {
-    min-height: 5rem;
-    max-height: none;
-  }
-
   body[data-screen="app"]:not([data-view="analyze"]):not([data-result]) .plus {
     display: grid;
   }
@@ -6338,14 +5417,8 @@ body[data-screen="onboard"] .toast {
   }
 }
 
-/* Between 64em and 80em the three columns are narrow: a little less air between them, and the
-   left column a larger share so its tiles still sit three to a row. */
+/* Between 64em and 80em the columns are narrow: a little less air between them. */
 @media (min-width: 64em) and (max-width: 79.99em) {
-  body[data-prefs="on"][data-dining="on"] .dash-grid {
-    grid-template-columns: minmax(0, 4.5fr) minmax(0, 4.6fr) minmax(0, 3.4fr);
-    gap: 18px;
-  }
-
   body[data-prefs="on"] .dash-col {
     gap: 18px;
   }
@@ -6631,32 +5704,13 @@ body[data-screen="onboard"] .toast {
     padding-inline: calc(var(--wide-pad) + 4px);
   }
 
-  body[data-prefs="on"][data-dining="on"] .dash-grid {
-    gap: 28px;
-  }
-
-  body[data-prefs="on"] .dash-col--mid,
-  body[data-prefs="on"] .dash-col--side {
+  body[data-prefs="on"] .dash-col--mid {
     gap: 28px;
   }
 }
-
-/* Wherever the dashboard reaches the window's right edge, the fixed + button (60px, 28px up from
-   the bottom) lands on the side column's corner. The column ends 24px above the window's bottom
-   edge (the shell's padding), so its bottom padding keeps the card 80px short of the column's end:
-   16px clear of the button. No menu row ever sits under it. */
-@media (min-width: 64em) and (max-width: 129.99em) {
-  body[data-prefs="on"] .dash-col--side {
-    padding-bottom: 88px;
-  }
-}
-/* Larger browser text on narrow phones: the pilot pill keeps only its M in every mode, the brand
-   name truncates instead of overflowing, and the dock tabs drop their labels so the icons fit. */
+/* Larger browser text on narrow phones: the brand name truncates instead of overflowing, and the
+   dock tabs drop their labels so the icons fit. */
 @media (max-width: 29.99em) {
-  .pilot { padding: 7px 8px; }
-  .pilot__text {
-    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
-  }
   .brand { flex: 1 1 auto; overflow: hidden; }
   .brand > span { overflow: hidden; text-overflow: ellipsis; }
 }
@@ -6814,11 +5868,6 @@ body[data-screen="onboard"] .toast {
   stroke-width: 2.2;
 }
 
-/* No campus menus, no Menu tab. */
-body:not([data-dining="on"]) .tab[data-view="menu"] {
-  display: none;
-}
-
 .rail {
   display: none;
 }
@@ -6849,12 +5898,8 @@ body:not([data-dining="on"]) .tab[data-view="menu"] {
   display: none;
 }
 
-/* ---- Today on phones: the day, then the recent scans; the upcoming meal lives on Menu */
+/* ---- Today on phones: the day, then the recent scans */
 @media (max-width: 63.99em) {
-  #dash-side {
-    display: none;
-  }
-
   body[data-prefs="on"] .meals-block {
     display: none;
   }
@@ -7036,331 +6081,6 @@ body:not([data-dining="on"]) .tab[data-view="menu"] {
   margin: 0 10px 10px;
 }
 
-/* ---- dish rows that open their sheet */
-.dish.has-btn {
-  display: block;
-  padding: 0;
-}
-
-.dish__btn {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 2px 8px;
-  width: 100%;
-  min-height: 44px;
-  padding: 10px 8px;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  line-height: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color var(--dur-1) linear;
-}
-
-.dish__btn:focus-visible {
-  outline-offset: -2px;
-}
-
-.dish__btn:active {
-  background: var(--wash);
-}
-
-@media (hover: hover) {
-  .dish__btn:hover {
-    background: var(--wash);
-  }
-}
-
-/* ---- the Menu tab */
-.menu-view {
-  gap: 14px;
-}
-
-.halls-bar {
-  min-width: 0;
-  margin-inline: calc(-1 * var(--pad-l)) calc(-1 * var(--pad-r));
-}
-
-/* Positioned, so the screen-reader-only words in the chips (absolutely placed) stay inside the scroller
-   instead of widening the page. */
-.halls-bar__track {
-  position: relative;
-  display: flex;
-  gap: 8px;
-  padding: 2px var(--pad-r) 4px var(--pad-l);
-  overflow-x: auto;
-  scroll-padding-inline: var(--pad-l);
-  scroll-snap-type: x proximity;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
-}
-
-.halls-bar__track::-webkit-scrollbar {
-  display: none;
-}
-
-.hall-chip {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink);
-  font: 500 0.9375rem / 1 var(--font-sans);
-  white-space: nowrap;
-  cursor: pointer;
-  scroll-snap-align: start;
-  transition: background-color var(--dur-1) linear, color var(--dur-1) linear, border-color var(--dur-1) linear, transform var(--dur-1) var(--ease-out);
-}
-
-.hall-chip:active {
-  transform: scale(0.97);
-}
-
-.hall-chip[aria-pressed="true"] {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--on-ink);
-}
-
-.hall-chip .icon {
-  width: 16px;
-  height: 16px;
-  stroke-width: 2.1;
-}
-
-.hall-chip__near {
-  display: inline-flex;
-}
-
-.hall-chip--edit {
-  border-style: dashed;
-  background: transparent;
-  color: var(--ink-2);
-}
-
-@media (hover: hover) {
-  .hall-chip:hover:not([aria-pressed="true"]) {
-    background: var(--surface-2);
-  }
-}
-
-.menu-body {
-  display: grid;
-  min-width: 0;
-}
-
-.menu-body.is-entering {
-  animation: view-in var(--dur-2) var(--ease-out);
-}
-
-.menu-body.is-entering-alt {
-  animation: view-in-alt var(--dur-2) var(--ease-out);
-}
-
-.menu-card {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-  padding: 18px 16px 16px;
-}
-
-.menu-card.is-skeleton {
-  gap: 12px;
-  min-height: 420px;
-}
-
-.menu-card--error {
-  justify-items: start;
-}
-
-.menu-card__head {
-  display: grid;
-  gap: 6px;
-  padding-inline: 4px;
-}
-
-.menu-card__meal {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 10px;
-  font: 300 2rem / 1.1 var(--font-sans);
-  letter-spacing: -0.025em;
-}
-
-.menu-card__meal strong {
-  font-weight: 400;
-}
-
-.menu-card__when {
-  color: var(--ink-2);
-  font-size: 1rem;
-  letter-spacing: 0;
-}
-
-.menu-card__hint {
-  color: var(--ink-2);
-  font-size: 0.9375rem;
-}
-
-.menu-card__head .legend {
-  margin-top: 4px;
-}
-
-/* The stations are inline blocks, each one a line of the columns: Safari balances block stations slowly
-   (60-110 ms a hall switch) and these in a fraction of it, in the same places. Widows and orphans at 1
-   keep the browser from moving a lone station to balance the columns differently. */
-.menu-cats {
-  column-gap: 32px;
-  widows: 1;
-  orphans: 1;
-}
-
-.menu-cat {
-  display: inline-block;
-  width: 100%;
-  vertical-align: top;
-  break-inside: avoid;
-  padding-bottom: 6px;
-}
-
-.menu-cat .dishes__cat {
-  position: static;
-  padding: 12px 8px 6px;
-  background: none;
-}
-
-.menu-card__foot {
-  padding-inline: 4px;
-  color: var(--ink-2);
-  font-size: 0.8125rem;
-}
-
-@media (min-width: 40em) {
-  .menu-card {
-    padding: 24px 22px 20px;
-  }
-
-  .menu-cats {
-    columns: 2 17rem;
-  }
-}
-
-/* ---- a dish's sheet */
-.dish-sheet__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font: 500 0.8125rem / 1.3 var(--font-sans);
-}
-
-.tag .icon {
-  width: 15px;
-  height: 15px;
-}
-
-.tag--avoid {
-  background: var(--surface-2);
-  color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
-}
-
-.tag--off {
-  background: var(--off-tag);
-  color: var(--off-ink);
-}
-
-.dish-sheet__fav {
-  display: grid;
-  gap: 8px;
-}
-
-.dish-sheet__fav .btn[aria-pressed="true"] .icon {
-  fill: currentColor;
-}
-
-.dish-sheet__facts {
-  display: grid;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.dish-sheet__facts .section-head {
-  align-items: center;
-}
-
-.facts {
-  display: grid;
-  margin: 0;
-  border-top: 1px solid var(--line);
-}
-
-.facts__row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 11px 2px;
-  border-bottom: 1px solid var(--line);
-}
-
-.facts__row dt {
-  flex: none;
-  color: var(--ink-2);
-  font-size: 0.9375rem;
-}
-
-.facts__row dd {
-  margin: 0;
-  min-width: 0;
-  font: 500 1rem / 1.3 var(--font-mono);
-  text-align: right;
-  overflow-wrap: anywhere;
-}
-
-.facts__row--lead dd {
-  font: 300 1.75rem / 1 var(--font-sans);
-  letter-spacing: -0.02em;
-}
-
-.facts__row--chips {
-  align-items: center;
-}
-
-.facts__row--chips dd {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-  font-family: var(--font-sans);
-}
-
-.facts__unit {
-  color: var(--ink-2);
-  font: 400 0.8125rem / 1 var(--font-sans);
-}
-
-.facts__none {
-  color: var(--label);
-  font: 400 0.9375rem / 1.3 var(--font-sans);
-}
-
 /* ---- the Week tab */
 .week-view {
   gap: 14px;
@@ -7493,12 +6213,6 @@ body[data-drop="on"]::after {
     color: var(--on-ink);
   }
 
-  .rail__dot {
-    top: 9px;
-    right: calc(50% - 15px);
-    box-shadow: 0 0 0 2px var(--surface);
-  }
-
   .capture {
     width: 100%;
     max-width: 56rem;
@@ -7520,29 +6234,9 @@ body[data-drop="on"]::after {
     font-size: 1.0625rem;
   }
 
-  .menu-view,
   .week-view {
     gap: 20px;
     padding-bottom: 72px; /* clear of the + */
-  }
-
-  .halls-bar {
-    margin-inline: 0;
-  }
-
-  .halls-bar__track {
-    flex-wrap: wrap;
-    padding: 2px;
-    overflow: visible;
-  }
-
-  .menu-card {
-    gap: 18px;
-    padding: 28px 32px 24px;
-  }
-
-  .menu-card__meal {
-    font-size: 2.75rem;
   }
 
   .week-grid {
@@ -7591,59 +6285,12 @@ body[data-drop="on"]::after {
     width: 21px;
     height: 21px;
   }
-
-  .rail__dot {
-    top: 13px;
-    right: auto;
-    left: 31px;
-  }
-
-  .menu-cats {
-    columns: 3 17rem;
-  }
 }
 
 /* Recently uploaded: the chevron sits in its own column, centered on the card. */
 .recent-card .meal__chev {
   grid-area: auto;
   align-self: center;
-}
-
-.facts__row--text dd {
-  font-family: var(--font-sans);
-  font-weight: 400;
-}
-
-.upcoming__count {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.upcoming__more {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  min-height: 44px;
-  margin: -10px -8px -10px 0;
-  padding: 0 4px 0 10px;
-  border-radius: 999px;
-  color: var(--ink);
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.upcoming__more .icon {
-  width: 16px;
-  height: 16px;
-  stroke-width: 2.2;
-}
-
-@media (hover: hover) {
-  .upcoming__more:hover {
-    background: var(--surface-2);
-  }
 }
 
 @media (min-width: 64em) {
@@ -7657,22 +6304,12 @@ body[data-drop="on"]::after {
   }
 }
 
-/* Laptops up to 80em: the sidebar is a narrow rail, so the shell gives up a little side padding and
-   the left column a larger share, and its nutrient tiles still sit three to a row. */
+/* Laptops up to 80em: the sidebar is a narrow rail, so the shell gives up a little side padding. */
 @media (min-width: 64em) and (max-width: 79.99em) {
   body[data-screen="app"] .shell,
   body[data-screen="app"] .topbar__inner {
     padding-inline: 24px;
   }
-
-  body[data-prefs="on"][data-dining="on"] .dash-grid {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 4.4fr) minmax(0, 3.6fr);
-  }
-}
-
-.upcoming__more {
-  flex: none;
-  white-space: nowrap;
 }
 
 /* Without preferences the week moved to its own tab, so the meals take the row's full width. */
@@ -7686,7 +6323,7 @@ body[data-drop="on"]::after {
    Quiet shell. One page, one job: every tab opens with a small label, its title and one sentence,
    its quiet actions on the right, so the content starts at the same height on every tab. Neutral
    text and hairlines; colour only where it means something. Lists are rows divided by hairlines;
-   the raised boxes are the calorie panel, the upcoming meal and the things that float (the dock,
+   the raised boxes are the calorie panel and the things that float (the dock,
    the + and the sheets).
    ====================================================================================== */
 
@@ -7703,8 +6340,7 @@ body[data-drop="on"]::after {
 }
 
 /* Small labels in sentence case, never spaced capitals. */
-.eyebrow,
-.dishes__cat {
+.eyebrow {
   font: 500 0.78125rem / 1.45 var(--font-sans);
   letter-spacing: 0;
   text-transform: none;
@@ -7720,10 +6356,6 @@ body[data-drop="on"]::after {
   box-shadow: 0 1px 0 var(--hair);
 }
 
-.pilot {
-  box-shadow: none;
-}
-
 /* The account button: initials on a quiet fill, not an ink disc. */
 .avatar {
   background: var(--surface-2);
@@ -7735,16 +6367,6 @@ body[data-drop="on"]::after {
 @media (hover: hover) {
   button.avatar:hover {
     background: var(--line);
-  }
-}
-
-.icon-btn.bell {
-  background: none;
-}
-
-@media (hover: hover) {
-  .icon-btn.bell:hover {
-    background: var(--hover-fill);
   }
 }
 
@@ -7789,38 +6411,6 @@ body[data-drop="on"]::after {
   overflow-wrap: anywhere;
 }
 
-.intro__actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  margin-left: auto;
-}
-
-.intro__actions:empty {
-  display: none;
-}
-
-/* Quiet actions in the intro row: our outline button, a size smaller. */
-.intro-btn {
-  min-height: 44px;
-  padding: 0 16px 0 14px;
-  gap: 7px;
-  font-size: 0.875rem;
-  box-shadow: none;
-}
-
-.intro-btn .icon {
-  width: 17px;
-  height: 17px;
-}
-
-@media (hover: hover) {
-  .intro-btn:hover {
-    background: var(--surface-2);
-  }
-}
-
 .datenav {
   gap: 4px;
 }
@@ -7837,17 +6427,16 @@ body[data-drop="on"]::after {
 
 /* The page under its head: the same gap on every tab. */
 .today,
-.menu-view,
 .week-view {
   gap: 20px;
 }
 
 /* ---- section titles inside a page: small and plain */
-:is(.today, .menu-view, .week-view) .section-head {
+:is(.today, .week-view) .section-head {
   padding: 0 4px;
 }
 
-:is(.today, .menu-view, .week-view) .section-title {
+:is(.today, .week-view) .section-title {
   font: 500 1rem / 1.35 var(--font-sans);
   letter-spacing: -0.005em;
 }
@@ -8048,41 +6637,6 @@ body[data-drop="on"]::after {
   background: none;
 }
 
-/* ---- Menu: the meal on the page itself; rows stay hairline-divided */
-#menu-body > .menu-card {
-  padding: 4px 4px 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-}
-
-#menu-body > .menu-card .menu-card__head {
-  padding-inline: 0;
-}
-
-#menu-body .menu-cat .dishes__cat {
-  padding-inline: 4px;
-}
-
-.menu-card__meal {
-  font-size: 1.5rem;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-}
-
-.menu-card__meal strong {
-  font-weight: 500;
-}
-
-.hall-chip {
-  font-size: 0.875rem;
-}
-
-.hall-chip:not([aria-pressed="true"]) {
-  border-color: var(--hair);
-  background: none;
-}
-
 /* ---- Week: the chart and the vitamins open on the page */
 .week-view .week {
   border-radius: 0;
@@ -8097,35 +6651,6 @@ body[data-drop="on"]::after {
   background: none;
   box-shadow: none;
   border-top: 1px solid var(--hair);
-}
-
-/* ---- Alerts and lists in sheets: rows */
-.options.alerts {
-  gap: 0;
-  border-top: 1px solid var(--hair);
-}
-
-.options.alerts > li {
-  border-bottom: 1px solid var(--hair);
-}
-
-.alerts .option {
-  min-height: 60px;
-  padding: 10px 6px;
-  border: 0;
-  border-radius: 10px;
-  background: none;
-}
-
-@media (hover: hover) {
-  .alerts .option:hover:not(:disabled) {
-    background: var(--hover-fill);
-  }
-}
-
-.alerts .option__meta {
-  font: 400 0.78125rem / 1.35 var(--font-sans);
-  color: var(--label);
 }
 
 /* ---- sheets: the intro sentence under the title */
@@ -8215,12 +6740,6 @@ body[data-drop="on"]::after {
     font-weight: 500;
   }
 
-  .rail__dot {
-    top: 12px;
-    right: auto;
-    left: 25px;
-  }
-
   body[data-screen="app"] .topbar__inner {
     height: var(--bar-h);
   }
@@ -8236,7 +6755,6 @@ body[data-drop="on"]::after {
   }
 
   .today,
-  .menu-view,
   .week-view {
     gap: 24px;
   }
@@ -8248,14 +6766,6 @@ body[data-drop="on"]::after {
     width: 100%;
     max-width: 30rem;
     margin: -8px 0 0 -6px;
-  }
-
-  .menu-card__meal {
-    font-size: 1.75rem;
-  }
-
-  #menu-body > .menu-card {
-    padding: 0 4px;
   }
 }
 
@@ -8278,11 +6788,6 @@ body[data-drop="on"]::after {
   .rail .tab .icon {
     width: 18px;
     height: 18px;
-  }
-
-  .rail__dot {
-    top: 12px;
-    left: 25px;
   }
 }
 
@@ -8369,28 +6874,19 @@ body[data-prefs="on"] .today .dash-col .stat {
   }
 }
 
-/* Laptops up to 80em: beside the 240px sidebar, two columns. The day on the left; the scans and,
-   under them, the upcoming meal on the right. */
+/* Laptops up to 80em: beside the 240px sidebar, two columns. The day on the left; the scans on the
+   right. */
 @media (min-width: 64em) and (max-width: 79.99em) {
-  body[data-prefs="on"] .dash-grid,
-  body[data-prefs="on"][data-dining="on"] .dash-grid {
+  body[data-prefs="on"] .dash-grid {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-areas:
-      "main mid"
-      "main side";
+    grid-template-areas: "main mid";
     gap: 24px 28px;
     align-items: start;
   }
 
-  /* Without a dining column there is nothing to stack: one row, the scans beside the day. */
-  body[data-prefs="on"]:not([data-dining="on"]) .dash-grid {
-    grid-template-areas: "main mid";
-  }
-
   /* Two stacked blocks need more height than a 768px window has, so up to 80em the dashboard is
      not bound to the window: the page scrolls, the left column stays pinned under the bar and
-     scrolls inside itself only when taller than the window, and the upcoming meal keeps its own
-     height under the scans. */
+     scrolls inside itself only when taller than the window. */
   body[data-prefs="on"] .today {
     display: grid;
     height: auto;
@@ -8410,27 +6906,13 @@ body[data-prefs="on"] .today .dash-col .stat {
     max-height: calc(100svh - var(--pin-top) - 12px);
   }
 
-  body[data-prefs="on"] .dash-col--mid,
-  body[data-prefs="on"] .dash-col--side {
+  body[data-prefs="on"] .dash-col--mid {
     display: grid;
     position: static;
     max-height: none;
     margin: 0;
     padding: 0;
     overflow: visible;
-  }
-
-  /* The page ends with the card clear of the fixed +. */
-  body[data-prefs="on"] .dash-col--side {
-    padding-bottom: 88px;
-  }
-
-  body[data-prefs="on"] .dash-col--side .upcoming {
-    max-height: 36rem;
-  }
-
-  body[data-prefs="on"] .dash-col--side .dishes {
-    min-height: 0;
   }
 }
 
@@ -8470,13 +6952,13 @@ body .today .dash-head .view-title {
   }
 }
 
-/* Laptops: the head starts at the same x on every tab (Menu and Week sit 4px further left). */
+/* Laptops: the head starts at the same x on every tab (Week sits 4px further left). */
 @media (min-width: 64em) {
   body .today .dash-head {
     padding-inline: 0;
   }
 
-  body :is(.menu-view, .week-view) .page-head {
+  body .week-view .page-head {
     padding-inline: 4px 0;
   }
 }
@@ -8491,78 +6973,6 @@ body .recent .recent-card {
   body .recent .recent-card {
     column-gap: 10px;
   }
-}
-
-/* ---- How busy a hall is, from its live cam: a dot and a few words, never colour alone. */
-
-:root {
-  --busy-quiet: #2f7a4d;
-  --busy-moderate: #a86a12;
-  --busy-busy: #b23a3a;
-}
-
-:root[data-theme="dark"] {
-  --busy-quiet: #63c08a;
-  --busy-moderate: #e3aa4f;
-  --busy-busy: #f08a8a;
-}
-
-.busy {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 6px;
-  margin: 0;
-  font-size: 0.875rem;
-  line-height: 1.4;
-  color: var(--ink-2);
-}
-
-.busy__level {
-  color: var(--ink);
-  font-weight: 500;
-}
-
-.busy__dot {
-  flex: none;
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--busy-dot, var(--ink-2));
-}
-
-.busy--quiet {
-  --busy-dot: var(--busy-quiet);
-}
-
-.busy--moderate {
-  --busy-dot: var(--busy-moderate);
-}
-
-.busy--busy {
-  --busy-dot: var(--busy-busy);
-}
-
-.busy__dot.busy--quiet {
-  background: var(--busy-quiet);
-}
-
-.busy__dot.busy--moderate {
-  background: var(--busy-moderate);
-}
-
-.busy__dot.busy--busy {
-  background: var(--busy-busy);
-}
-
-.hall-chip .busy__dot {
-  margin-left: 2px;
-}
-
-.menu-card__head .busy,
-.upcoming__head .busy {
-  margin-top: 2px;
 }
 
 /* ---- Phones: the six nutrients and the health score swipe sideways, a page at a time, with dots. */
@@ -8642,94 +7052,6 @@ body .recent .recent-card {
   }
 }
 
-/* ---- What a dish is: a small icon per kind (meat, pescatarian, vegetarian, plant based, halal,
-   local), each its own shape and colour, named in the legend and in the dish sheet. */
-
-:root {
-  --kind-meat: #9a3b2a;
-  --kind-fish: #2c6996;
-  --kind-veg: #2f7a4d;
-  --kind-plant: #3f7a20;
-  --kind-halal: #6a4b99;
-  --kind-local: #86611a;
-}
-
-:root[data-theme="dark"] {
-  --kind-meat: #ec937f;
-  --kind-fish: #88bae4;
-  --kind-veg: #71c394;
-  --kind-plant: #9bd177;
-  --kind-halal: #bda5e6;
-  --kind-local: #dfb96f;
-}
-
-.kind {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  color: var(--kind-c, var(--ink-2));
-}
-
-.kind .icon {
-  width: 16px;
-  height: 16px;
-  stroke-width: 1.9;
-}
-
-.kind--meat { --kind-c: var(--kind-meat); }
-.kind--fish { --kind-c: var(--kind-fish); }
-.kind--veg { --kind-c: var(--kind-veg); }
-.kind--plant { --kind-c: var(--kind-plant); }
-.kind--halal { --kind-c: var(--kind-halal); }
-.kind--local { --kind-c: var(--kind-local); }
-
-.dish__kinds {
-  display: inline-flex;
-  gap: 5px;
-  margin-left: 8px;
-  vertical-align: -2px;
-  white-space: nowrap;
-}
-
-.legend .kind .icon {
-  width: 15px;
-  height: 15px;
-}
-
-.tag--kind {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Station names (Grill Station, Entrees, Pizza...): a real heading with a hairline out to the edge. */
-.menu-cat .dishes__cat {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 22px 4px 8px;
-  font: 600 1.0625rem / 1.3 var(--font-sans);
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-
-.menu-cat .dishes__cat::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--hair, var(--line));
-}
-
-.menu-cat:first-child .dishes__cat {
-  padding-top: 10px;
-}
-
-.dishes__group > .dishes__cat {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
 /* ---- Saved meal photos: a logged meal's own photo in its row, in the same fixed 44px tile the
    plate used, so nothing moves while it loads. */
 .recent-card__photo--img {
@@ -8754,138 +7076,9 @@ body .recent .recent-card {
   pointer-events: none;
 }
 
-/* ---- Sign-in, production pass: Resend link waits out its cooldown (aria-disabled keeps focus on
-   it while the label counts down), and the account screens' muted label sits tight on the title. */
-.btn[data-action="resend"][aria-disabled="true"] {
-  cursor: not-allowed;
-  color: var(--ink-2);
-}
-
-.btn[data-action="resend"][aria-disabled="true"]:active {
-  transform: none;
-}
-
-.resend__label {
-  font-variant-numeric: tabular-nums;
-}
-
+/* ---- Sign-in, production pass: the account screens' muted label sits tight on the title. */
 .auth-head > .eyebrow + .view-title {
   margin-top: -4px;
-}
-
-/* ---- Hall cam: the busy line opens the hall's latest boxed clip in the panel sheet (openCam in app.js). */
-
-.busy--cam {
-  min-height: 44px;
-  margin-block: -6px -4px;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 0.875rem;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-.busy--cam .busy__meta {
-  transition: color var(--dur-1) linear;
-}
-
-.busy__chev {
-  display: inline-grid;
-  place-items: center;
-  vertical-align: -3px;
-  margin-left: 2px;
-  color: var(--ink-2);
-  transition: transform var(--dur-2) var(--ease-out), color var(--dur-1) linear;
-}
-
-.busy__chev .icon {
-  width: 16px;
-  height: 16px;
-}
-
-.busy--cam:focus-visible {
-  border-radius: 8px;
-}
-
-@media (hover: hover) {
-  .busy--cam:hover .busy__meta,
-  .busy--cam:hover .busy__chev {
-    color: var(--ink);
-  }
-
-  .busy--cam:hover .busy__chev {
-    transform: translateX(2px);
-  }
-}
-
-.busy--cam:active .busy__chev {
-  transform: translateX(4px);
-}
-
-.cam {
-  display: grid;
-  gap: 10px;
-  min-width: 0; /* the video's own 960px width must not widen the sheet */
-  margin: 0;
-}
-
-.cam__frame {
-  position: relative;
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-  border-radius: var(--radius-inner);
-  background: var(--panel);
-}
-
-.cam__video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.cam.is-missing .cam__frame::after {
-  content: "This clip isn't available. A new one comes every few minutes.";
-  position: absolute;
-  inset: auto 0 0;
-  padding: 10px 14px;
-  background: var(--panel);
-  color: var(--on-panel-2);
-  font-size: 0.875rem;
-  line-height: 1.4;
-}
-
-.cam__caption {
-  min-width: 0;
-}
-
-.cam__live {
-  justify-self: start;
-}
-
-.cam__live .icon {
-  width: 18px;
-  height: 18px;
-}
-
-.cam__note {
-  max-width: 60ch;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .busy__chev,
-  .busy--cam .busy__meta {
-    transition: none;
-  }
-
-  .busy--cam:hover .busy__chev,
-  .busy--cam:active .busy__chev {
-    transform: none;
-  }
 }
 
 /* ---- The install sheet's screen recording (iPhone and iPad): above the steps, never taller than
@@ -8908,172 +7101,6 @@ body .recent .recent-card {
   object-fit: cover;
 }
 
-/* ---- Which UMass Dining menu the foods were matched against: one quiet line above the foods,
-   with Change, and the small sheet that picks the hall, the day and (optionally) the meal. Chips
-   are radio buttons, so arrow keys move between them and a screen reader hears one group each. */
-
-.menu-src {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 4px 10px;
-  margin: 2px 0 10px;
-  padding: 6px 0 6px 4px;
-  border-top: 1px solid var(--hair, var(--line));
-  border-bottom: 1px solid var(--hair, var(--line));
-}
-
-.menu-src__icon {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  box-sizing: border-box;
-  border-radius: 999px;
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--ink);
-}
-
-.menu-src__icon .icon {
-  width: 16px;
-  height: 16px;
-}
-
-.menu-src__text {
-  margin: 0;
-  font-size: 0.875rem;
-  line-height: 1.45;
-  color: var(--ink-2);
-  text-wrap: pretty;
-}
-
-.menu-src__text strong {
-  color: var(--ink);
-  font-weight: 500;
-}
-
-/* No date on the photo: the same line, its icon on a dashed ring (the app's mark for "not settled")
-   instead of a filled disc. */
-.menu-src--unsure .menu-src__icon {
-  border: 1px dashed var(--line-strong);
-  background: none;
-  box-shadow: none;
-}
-
-.menu-src--none {
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding-left: 4px;
-}
-
-.menu-src__change {
-  justify-self: end;
-  font-size: 0.875rem;
-  white-space: nowrap;
-}
-
-.rematch {
-  display: grid;
-  gap: 18px;
-  min-width: 0;
-}
-
-.rematch__group {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.rematch__group legend {
-  margin-bottom: 8px;
-  padding: 0;
-}
-
-.rematch__optional {
-  margin-left: 4px;
-  color: var(--ink-2);
-  font-weight: 400;
-}
-
-.rematch__choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.menu-pick {
-  position: relative;
-  display: inline-flex;
-}
-
-.menu-pick__input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.menu-pick__label {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--hair, var(--line));
-  border-radius: 999px;
-  color: var(--ink);
-  font: 500 0.875rem / 1 var(--font-sans);
-  white-space: nowrap;
-  pointer-events: none;
-  transition: background-color var(--dur-1) linear, border-color var(--dur-1) linear, color var(--dur-1) linear,
-    transform var(--dur-1) var(--ease-out);
-}
-
-.menu-pick__input:checked + .menu-pick__label {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--on-ink);
-}
-
-.menu-pick__input:focus-visible + .menu-pick__label {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
-
-.menu-pick__input:active + .menu-pick__label {
-  transform: scale(0.97);
-}
-
-@media (hover: hover) {
-  .menu-pick__input:hover:not(:checked) + .menu-pick__label {
-    background: var(--hover-fill, var(--surface-2));
-    border-color: var(--line-strong);
-  }
-}
-
-.rematch .sheet-hint {
-  margin: 0;
-}
-
-.rematch__submit[aria-busy="true"] {
-  cursor: progress;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .menu-pick__label {
-    transition: none;
-  }
-
-  .menu-pick__input:active + .menu-pick__label {
-    transform: none;
-  }
-}
-
 /* ------------------------------------------------------------- ranges off */
 /* Ranges are opt-in (the set-up step, or Settings → Display; app.js rangesOn). With them off every
    amount prints as its likely value alone, and a band is a plain bar from zero to that value: the
@@ -9092,47 +7119,11 @@ body[data-ranges="off"] [data-ranges-only] {
   display: none;
 }
 
-/* ---- Delete account by email (auth.py delete-account → confirm-delete). Settings → Your data shows
-   the "Check your email" panel in the .data-ask box once the link is out; the ?delete= screen lists
-   what goes in hairline rows under a small label, then the danger button over Keep it. */
-
-.data-ask__sent:focus {
-  outline: none;
-}
+/* ---- Settings → Your data: the "Delete everything?" question in the .data-ask box. */
 
 .data-ask .delete__ask strong {
   color: var(--ink);
   font-weight: 500;
-}
-
-.data-ask .banner__status {
-  margin: -2px 0 0;
-}
-
-.delete-what {
-  display: grid;
-  gap: 6px;
-  padding: 16px 18px 4px;
-}
-
-.delete-what__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.delete-what__list li {
-  padding: 11px 0;
-  border-top: 1px solid var(--line);
-  font-size: 0.9375rem;
-  line-height: 1.4;
-  color: var(--ink-2);
-  text-wrap: pretty;
-}
-
-.delete-choice {
-  display: grid;
-  gap: 10px;
 }
 
 /* ---- Nov 15 notes, Today: no sentence under the day's title and no Today button (the Today tab
@@ -9313,17 +7304,6 @@ body .recent .recent-card__place {
   font-weight: 500;
 }
 
-/* ---- Nov 15 notes, Menu: the diet icons keep their colours in every legend, as they have on the
-   dishes, and station names stand on their own without a line out to the edge. */
-.legend .kind .icon {
-  color: inherit;
-  fill: none;
-}
-
-.menu-cat .dishes__cat::after {
-  content: none;
-}
-
 .legal ul {
   list-style: disc;
 }
@@ -9433,157 +7413,5 @@ body .week-view .micro-card {
 @media (hover: hover) {
   .wk__col.is-future:hover {
     background: none;
-  }
-}
-
-/* ---- Nov 15: Log out sits beside the account at the top of Settings (and in the sidebar on laptops). */
-.account__logout {
-  flex: none;
-  margin-left: auto;
-  min-height: 44px;
-  padding: 0 14px 0 12px;
-  gap: 7px;
-  font-size: 0.875rem;
-}
-
-.account__logout .icon {
-  width: 17px;
-  height: 17px;
-}
-
-/* Menu: every station heading gets the same top space, and the gap between stations sits under each
-   one instead, so the first heading in each column lines up with the others across the columns. */
-.menu-cat {
-  padding-bottom: 18px;
-}
-
-.menu-cat .dishes__cat {
-  padding-top: 10px;
-}
-
-/* ---- Nov 15, Menu: other days. Day arrows beside the title with the day between them (Today,
-   Tomorrow, Mon, Nov 16), stepping through the days the hall has a menu; another day's meals as
-   underlined tabs over the one on show, quieter than the hall chips above them. */
-.menunav {
-  gap: 4px;
-}
-
-.menunav__day {
-  min-width: 6.5em; /* "Wed, Nov 18" fits, so the arrows stay put as the day changes */
-  padding-inline: 4px;
-  color: var(--ink);
-  font: 500 0.9375rem / 1 var(--font-sans);
-  text-align: center;
-  white-space: nowrap;
-}
-
-/* Laptops hide the Today arrows (the week strip picks the day there); the Menu has no strip. */
-body[data-prefs="on"] .menunav .datenav__btn {
-  display: grid;
-}
-
-.menu-meals {
-  display: block; /* not flex: each hidden radio then sits by its tab, so focusing it scrolls that tab into view */
-  min-width: 0;
-  white-space: nowrap;
-  margin: 0 -4px 18px; /* the first meal's name lines up with the hall's name under it */
-  overflow-x: auto;
-  background: linear-gradient(var(--hair), var(--hair)) left 8px bottom / calc(100% - 16px) 1px no-repeat;
-  scrollbar-width: none;
-}
-
-.menu-meals::-webkit-scrollbar {
-  display: none;
-}
-
-/* When the tabs scroll sideways, the side with more fades out; the tabs are measured from the row. */
-.menu-meals {
-  position: relative;
-  scroll-padding-inline: 8px;
-}
-
-.menu-meals.has-more-end {
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent);
-}
-
-.menu-meals.has-more-start {
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 40px);
-  mask-image: linear-gradient(90deg, transparent, #000 40px);
-}
-
-.menu-meals.has-more-start.has-more-end {
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 40px, #000 calc(100% - 40px), transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 40px, #000 calc(100% - 40px), transparent);
-}
-
-.menu-meals__opt {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  margin-right: 4px;
-  padding-inline: 8px;
-  vertical-align: top;
-  color: var(--ink-2);
-  font: 500 0.9375rem / 1 var(--font-sans);
-  cursor: pointer;
-  -webkit-user-select: none;
-  user-select: none;
-  transition: color var(--dur-1) linear;
-}
-
-/* The underline runs the width of the meal's name. */
-.menu-meals__opt::after {
-  content: "";
-  position: absolute;
-  right: 8px;
-  bottom: 0;
-  left: 8px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--ink);
-  opacity: 0;
-}
-
-.menu-meals__input:checked + .menu-meals__opt {
-  color: var(--ink);
-}
-
-.menu-meals__input:checked + .menu-meals__opt::after {
-  opacity: 1;
-}
-
-.menu-meals__input:focus-visible + .menu-meals__opt {
-  border-radius: 8px;
-  outline: 2px solid var(--ink);
-  outline-offset: -2px;
-}
-
-@media (hover: hover) {
-  .menu-meals__input:not(:checked) + .menu-meals__opt:hover {
-    color: var(--ink);
-  }
-}
-
-.menu-meals__input:not(:checked) + .menu-meals__opt:active {
-  color: var(--ink);
-}
-
-/* Another meal of the day comes in the way a hall's menu does. */
-#menu-body > .menu-card.is-entering {
-  animation: view-in var(--dur-2) var(--ease-out);
-}
-
-.menu-note {
-  margin-bottom: 14px;
-  padding-inline: 4px;
-  color: var(--ink-2);
-  font-size: 0.875rem;
-}
-
-@media (max-width: 22.4375em) {
-  .menunav__day {
-    min-width: 0;
   }
 }

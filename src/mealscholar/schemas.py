@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -60,11 +60,6 @@ class MealContext(BaseModel):
 # which is what Gemini's constrained decoding handles best.
 
 
-_SERVINGS = (
-    "How many of the dish's listed serving are on the plate, as a range like grams; null unless menu_item is set."
-)
-
-
 class FoodItem(BaseModel):
     """One food or drink as seen in the photo. Deliberately carries no nutrient numbers."""
 
@@ -83,16 +78,6 @@ class FoodItem(BaseModel):
     hidden_fat_likely: bool = Field(
         description="True when oil, butter, dressing or sauce is probably present but not visible."
     )
-    # Defaults keep stored meals valid; vision.response_schema() still marks them required for Gemini.
-    menu_item: str | None = Field(
-        default=None,
-        description=(
-            "Exact name of the listed menu dish this food is; null when it is not one of them or no menu was given."
-        ),
-    )
-    servings_low: float | None = Field(default=None, description=_SERVINGS)
-    servings_likely: float | None = Field(default=None, description=_SERVINGS)
-    servings_high: float | None = Field(default=None, description=_SERVINGS)
 
     @model_validator(mode="after")
     def _ordered_grams(self) -> FoodItem:
@@ -100,13 +85,6 @@ class FoodItem(BaseModel):
         self.grams_low, self.grams_likely, self.grams_high = low, likely, high
         if self.box_2d is not None and len(self.box_2d) != 4:
             self.box_2d = None
-        servings = (self.servings_low, self.servings_likely, self.servings_high)
-        counted = sorted(max(0.0, float(s)) for s in servings) if None not in servings else None
-        if self.menu_item is None or counted is None or counted[1] <= 0:
-            # A count without a dish, a missing one, or 0 is no count at all.
-            self.servings_low, self.servings_likely, self.servings_high = None, None, None
-        else:
-            self.servings_low, self.servings_likely, self.servings_high = counted
         return self
 
 
@@ -141,64 +119,19 @@ class Range(BaseModel):
     high: float
 
 
-class DishMatch(BaseModel):
-    """The campus dish an item was matched to, with its own nutrition label per serving, and where
-    its numbers come from: the hall, the day and the meal it was served."""
-
-    dish_id: str | None
-    name: str
-    location_id: int
-    location_name: str
-    date: date | None
-    """The day the dish was on the menu; None for a dish from the hall's past menus (meal 'any')."""
-    meal: str
-    serving_size: str | None
-    serving_grams: float | None
-    per_serving: dict[str, float] = {}
-    """Nutrient key: the label's value for one serving."""
-    healthfulness_score: int | None = None
-    """UMass Dining's own 0-7 rating; information, never a target."""
-
-
-class MenuRef(BaseModel):
-    """The hall menus a meal was matched against: the hall the client named, and the day.
-
-    With a certain date (the photo's EXIF time, or a day the user chose) that is one day's menu,
-    the meal on at the photo's time first. Without one (a screenshot, an AirDropped or edited photo:
-    time from the device or the upload) it is the menus from `start` to `end`, days up to the
-    photo's (never a later one), `date` being the guessed day whose dishes come first."""
-
-    location_id: int
-    location_name: str
-    date: date
-    dishes: int
-    """Dishes the meal was matched against."""
-    meal: str | None = None
-    """The meal listed first: the one on at the photo's time, or the one the user chose."""
-    certain: bool = True
-    """False when the photo carried no date, so the menus of several days were used."""
-    start: date | None = None
-    """With certain=False, the first and last day whose dishes the model was shown; None when none was."""
-    end: date | None = None
-
-
 class ItemResult(BaseModel):
     item: FoodItem
     match: FoodMatch | None
-    """The USDA food, which for a campus item only donates micronutrients."""
+    """The USDA food; None when no close match was found, so the item isn't counted."""
     alternatives: list[FoodMatch] = []
     """Other database candidates the user can switch to."""
     nutrients: dict[str, Range] = {}
-    source: Literal["usda", "campus"] = "usda"
-    """Where the macronutrients come from: USDA per 100 g, or the campus dish's label."""
-    dish: DishMatch | None = None
 
 
 class MealResult(BaseModel):
     id: int | None = None
     context: MealContext
     items: list[ItemResult]
-    menu: MenuRef | None = None
     name: str | None = None
     """The item names joined, e.g. 'white rice, pizza slice and mystery sauce'."""
     scale_reference: str | None = None

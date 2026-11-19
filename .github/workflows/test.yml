@@ -1,6 +1,5 @@
 # Runs the test suite on every pull request and push to main. The tests build their own fixture
-# USDA database and fake Gemini, Nominatim and the dining menus, so the job needs no secrets and
-# makes no API calls. The MongoDB store tests run only when MEALSCHOLAR_TEST_MONGODB_URI is set.
+# USDA database and fake Gemini and Nominatim, so the job needs no secrets and makes no API calls.
 # Local equivalent: uv run pytest
 name: Tests
 

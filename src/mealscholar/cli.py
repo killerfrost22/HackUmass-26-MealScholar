@@ -15,9 +15,7 @@ from dotenv import find_dotenv, load_dotenv
 from .config import USER_AGENT, Settings, load_settings
 from .context import NominatimPlaces
 from .diary import Diary
-from .dining import MAX_ALERT_DAYS, open_digest, open_dining, send_favorites_digests
 from .insights import LOW_DV_PCT, period_report, summarize_days
-from .mailer import make_sender
 from .nutrients import BY_KEY, NUTRIENTS
 from .nutrition import FoodDatabase, FoodDatabaseMissing, build_database
 from .photos import PhotoStore
@@ -59,7 +57,6 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--lat", type=float, help="device latitude at capture (opt-in)")
     p.add_argument("--lon", type=float, help="device longitude at capture (opt-in)")
     p.add_argument("--use-photo-location", action="store_true", help="opt in to the photo's GPS tags")
-    p.add_argument("--hall", type=int, metavar="LOCATION_ID", help="dining location id; match foods to its menu")
     p.add_argument("--answer", help="answer to the clarifying question (skips the prompt)")
     p.add_argument("--no-log", action="store_true", help="don't save to the diary")
     p.add_argument("--json", action="store_true", help="print the result as JSON")
@@ -70,11 +67,10 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.set_defaults(run=cmd_show)
 
-    p = sub.add_parser("fix", help="correct an item's grams, serving count or USDA match")
+    p = sub.add_parser("fix", help="correct an item's grams or USDA match")
     p.add_argument("meal_id", type=int)
     p.add_argument("item", type=int, help="item number as shown by `show`")
     p.add_argument("--grams", type=int)
-    p.add_argument("--servings", type=float, help="how many of the dish's listed serving, for campus dishes")
     p.add_argument("--food", type=int, metavar="FDC_ID", help="switch to another USDA food")
     p.add_argument("--json", action="store_true")
     p.set_defaults(run=cmd_fix)
@@ -95,10 +91,6 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to reach it from a phone on the same network")
     p.add_argument("--port", type=int, default=8000)
     p.set_defaults(run=cmd_serve)
-
-    p = sub.add_parser("alerts-digest", help="queue a favorites email for every user with email alerts on")
-    p.add_argument("--days", type=int, default=1, help=f"days ahead, 1-{MAX_ALERT_DAYS} (default: today and tomorrow)")
-    p.set_defaults(run=cmd_alerts_digest)
     return parser
 
 
@@ -132,7 +124,6 @@ def cmd_analyze(args: argparse.Namespace, settings: Settings) -> None:
         vision=GeminiVision(settings.gemini_api_key, settings.gemini_model, settings.thinking_level),
         foods=FoodDatabase(settings.food_db),
         places=NominatimPlaces(settings.nominatim_url, USER_AGENT),
-        menus=open_dining(settings),  # None without MONGODB_URI
     )
     result = workflow.analyze(
         args.photo,
@@ -140,7 +131,6 @@ def cmd_analyze(args: argparse.Namespace, settings: Settings) -> None:
         device_location=(args.lat, args.lon) if args.lat is not None else None,
         read_photo_gps=args.use_photo_location,
         usual_portions=diary.usual_portions(),
-        location_id=args.hall,
     )
     if result.question:
         answer = args.answer
@@ -161,24 +151,15 @@ def cmd_show(args: argparse.Namespace, settings: Settings) -> None:
 
 
 def cmd_fix(args: argparse.Namespace, settings: Settings) -> None:
-    if args.grams is None and args.servings is None and args.food is None:
-        raise ValueError("Pass --grams, --servings and/or --food.")
+    if args.grams is None and args.food is None:
+        raise ValueError("Pass --grams and/or --food.")
     if args.grams is not None and args.grams <= 0:
         raise ValueError("--grams must be positive.")
-    if args.servings is not None and args.servings <= 0:
-        raise ValueError("--servings must be positive.")
     diary = Diary(settings.diary_db)
     result = _logged_meal(diary, args.meal_id)
     if not 1 <= args.item <= len(result.items):
         raise ValueError(f"Meal #{args.meal_id} has items 1-{len(result.items)}.")
-    corrected = correct(
-        result,
-        args.item - 1,
-        FoodDatabase(settings.food_db),
-        grams=args.grams,
-        servings=args.servings,
-        fdc_id=args.food,
-    )
+    corrected = correct(result, args.item - 1, FoodDatabase(settings.food_db), grams=args.grams, fdc_id=args.food)
     result = diary.save(corrected)
     if args.grams is not None:
         diary.remember_portion(result.items[args.item - 1].item.name, args.grams)
@@ -188,7 +169,7 @@ def cmd_fix(args: argparse.Namespace, settings: Settings) -> None:
 def cmd_delete(args: argparse.Namespace, settings: Settings) -> None:
     if not Diary(settings.diary_db).delete(args.meal_id):
         raise ValueError(f"No meal #{args.meal_id}.")
-    PhotoStore(settings.photos).delete(None, args.meal_id)  # kept when the web app logged it
+    PhotoStore(settings.photos).delete(args.meal_id)  # kept when the web app logged it
     print(f"Deleted meal #{args.meal_id}.")
 
 
@@ -234,18 +215,6 @@ def cmd_serve(args: argparse.Namespace, settings: Settings) -> None:
     uvicorn.run(create_app(settings), host=args.host, port=args.port)
 
 
-def cmd_alerts_digest(args: argparse.Namespace, settings: Settings) -> None:
-    """Queues the emails in the outbox, or sends them one by one over SMTP; nothing runs this on a
-    schedule yet."""
-    if not 1 <= args.days <= MAX_ALERT_DAYS:
-        raise ValueError(f"--days must be from 1 to {MAX_ALERT_DAYS}.")
-    users, prefs, dining = open_digest(settings)
-    sender = make_sender(settings.email_provider, users, settings.smtp, background=False)
-    report = send_favorites_digests(users, prefs, dining, sender, settings.public_url, days=args.days)
-    failed = f"; {report.failed} failed" if report.failed else ""
-    print(f"Queued {report.queued} favorites email(s) for {report.users} user(s) with email alerts on{failed}.")
-
-
 # --- formatting ---------------------------------------------------------------
 
 
@@ -263,13 +232,6 @@ def _format_meal(result: MealResult) -> str:
     if ctx.place:
         cuisine = f", {ctx.place.cuisine}" if ctx.place.cuisine else ""
         lines.append(f"Place: {ctx.place.name} ({ctx.place.kind.replace('_', ' ')}{cuisine})")
-    if (menu := result.menu) is not None:
-        if menu.certain:
-            lines.append(f"Menu: {menu.location_name}, {menu.date}" + (f", {menu.meal} first" if menu.meal else ""))
-        else:
-            lines.append(
-                f"Menu: {menu.location_name}, photo had no date: {menu.start} to {menu.end}, {menu.date} first"
-            )
     if result.scale_reference:
         lines.append(f"Size judged against: {result.scale_reference}")
     lines.append("")
@@ -280,14 +242,7 @@ def _format_meal(result: MealResult) -> str:
             grams += f" ({item.grams_low}-{item.grams_high})"
         extra = ", likely hidden oil/butter" if item.hidden_fat_likely else ""
         lines.append(f"{i:>3}. {item.name}: {grams}, {item.cooking_method.replace('_', ' ')}{extra}")
-        if r.source == "campus" and r.dish is not None:
-            served = f"{r.dish.meal} {r.dish.date}" if r.dish.date else "past menus"
-            lines.append(f"     Campus menu: {r.dish.name} ({r.dish.serving_size}) at {r.dish.location_name}, {served}")
-            if (kcal := r.nutrients.get("energy_kcal")) is not None:
-                lines.append(f"     {_fmt_range(kcal, 'kcal')}")
-            if r.match:
-                lines.append(f"     micronutrients from USDA: {r.match.description}")
-        elif r.match:
+        if r.match:
             lines.append(f"     USDA: {r.match.description} [{r.match.data_type} #{r.match.fdc_id}]")
             if (kcal := r.nutrients.get("energy_kcal")) is not None:
                 lines.append(f"     {_fmt_range(kcal, 'kcal')}")

@@ -67,8 +67,7 @@ def daily_value_pct(totals: Mapping[str, Range]) -> dict[str, Range]:
 
 def summarize(result: MealResult) -> MealResult:
     """Recompute totals, % Daily Value, and which totals are missing data from some food."""
-    # A campus dish counts with or without a USDA donor; a USDA item needs its match.
-    matched: list[ItemResult] = [r for r in result.items if r.match is not None or r.dish is not None]
+    matched: list[ItemResult] = [r for r in result.items if r.match is not None]
     totals = add_ranges(r.nutrients for r in matched)
     partial = sorted(
         {n.key for n in NUTRIENTS for r in matched if n.key not in r.nutrients},

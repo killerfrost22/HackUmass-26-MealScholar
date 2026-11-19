@@ -36,8 +36,7 @@ Fill this in at kickoff so every agent knows whose files are whose.
 | Area | Owner (GitHub login) | Folders |
 |---|---|---|
 | AI food detection (photo → nutrients) | `killerfrost22` (Joseph) | `src/mealscholar/`, `tests/`, `pyproject.toml`, `uv.lock` |
-| UI/UX, login/registration, site deploy | `hershey-harsh` (Harsh) | `web/`, `.github/workflows/deploy-site.yml` |
-| UMass Dining menu data | `hershey-harsh` (Harsh) | none, it's in MongoDB Atlas (db `umass_dining`) |
+| UI/UX, site deploy | `hershey-harsh` (Harsh) | `web/`, `.github/workflows/deploy-site.yml` |
 | Pitch deck and video | `gabbyao` (Gabby) | `video/` |
 
 The site at https://mealscholar.health is `web/` (the app is at https://app.mealscholar.health), and both redeploy on every push to `main`. It's plain static files, no build step. The deploy runs on Harsh's Mac mini, which only takes `deploy-site.yml` from `main` in a version Harsh approved, so use `ubuntu-latest` for other workflows and ask on the board before changing the deploy.
@@ -87,4 +86,4 @@ Stop only when a full pass across every dimension finds no meaningful improvemen
 | **Motion** | Every animation has a purpose (guiding attention, showing cause and effect, setting pace); custom easing curves, not browser or library defaults; quick, confident durations; animate only `transform` and `opacity` to hold 60fps; respects `prefers-reduced-motion`. |
 | **Micro-interactions** | Every interactive element has hover, `:focus-visible`, active, disabled, and loading states where they apply; feedback is immediate; affordances read clearly on both pointer and touch. |
 | **Responsiveness** | Fluid from 320px to 2560px; no horizontal scroll; touch targets of at least 44×44px; layouts recomposed for each viewport, not just shrunk. |
-| **Originality** | A distinct visual identity rooted in MealScholar's concept and content: meal photos, the foods found in them, and estimates matched to the campus menu instead of fake-precise numbers. It MUST NOT look like a stock template or a generic hero-plus-three-cards layout. Give it at least one memorable signature moment. |
+| **Originality** | A distinct visual identity rooted in MealScholar's concept and content: meal photos, the foods found in them, and estimates matched to USDA FoodData Central instead of fake-precise numbers. It MUST NOT look like a stock template or a generic hero-plus-three-cards layout. Give it at least one memorable signature moment. |

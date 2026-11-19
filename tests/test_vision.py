@@ -1,54 +1,27 @@
-"""What Gemini is told (the output schema as sent, the prompts, the context with a hall's menu) and how
-one call is bounded: a timeout, one retry on an unusable reply, none on an SDK error or a final status."""
+"""What Gemini is told (the output schema as sent, the prompts, the context) and how one call is
+bounded: a timeout, one retry on an unusable reply, none on an SDK error or a final status."""
 
 import hashlib
 import importlib.util
 import json
 import sys
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from mealscholar.campus import serving_grams
-from mealscholar.dining import DishFacts
-from mealscholar.schemas import MealAnalysis, MealContext
-from mealscholar.vision import (
-    ENUM_CHARS,
-    ENUM_NAMES,
-    MENU_NAMES,
-    MENU_RULE,
-    REFINE_PROMPT,
-    SYSTEM_PROMPT,
-    GeminiVision,
-    VisionError,
-    closed_set,
-    context_prompt,
-    response_schema,
-)
+from mealscholar.schemas import FoodItem, MealAnalysis, MealContext, Place
+from mealscholar.vision import REFINE_PROMPT, SYSTEM_PROMPT, GeminiVision, VisionError, context_prompt, response_schema
 
-MENU_FIELDS = ("menu_item", "servings_low", "servings_likely", "servings_high")
+OLD_MENU_FIELDS = ("menu_item", "servings_low", "servings_likely", "servings_high")
 
 
-def dish(name, meal="lunch", serving=None):
-    return DishFacts(
-        dish_id=None,
-        name=name,
-        meal=meal,
-        category=None,
-        serving_size=serving,
-        serving_grams=serving_grams(serving),
-        per_serving={"energy_kcal": 100},
-        healthfulness_score=None,
-    )
-
-
-def test_menu_fields_are_required_but_nullable_for_gemini_and_optional_for_stored_rows():
-    required = response_schema()["$defs"]["FoodItem"]["required"]
-    assert all(field in required for field in MENU_FIELDS)
-    assert "name" in required and len(required) == len(set(required))
-    # Diary rows and bench runs recorded before the fields existed still validate.
+def test_every_field_is_required_for_gemini_and_old_menu_fields_are_ignored():
+    food_item = response_schema()["$defs"]["FoodItem"]
+    assert sorted(food_item["required"]) == sorted(FoodItem.model_fields)
+    assert not set(OLD_MENU_FIELDS) & set(food_item["properties"])
+    # Bench runs recorded while campus menus were sent still validate; the menu fields are dropped.
     old = {
         "is_food": True,
         "items": [
@@ -61,99 +34,41 @@ def test_menu_fields_are_required_but_nullable_for_gemini_and_optional_for_store
                 "grams_high": 260,
                 "box_2d": None,
                 "hidden_fat_likely": False,
+                "menu_item": "Jasmine Rice",
+                "servings_low": 1,
+                "servings_likely": 1.5,
+                "servings_high": 2,
             }
         ],
         "scale_reference": None,
         "question": None,
     }
     (item,) = MealAnalysis.model_validate_json(json.dumps(old)).items
-    assert (item.menu_item, item.servings_low, item.servings_likely, item.servings_high) == (None, None, None, None)
-    assert "menu_item" in SYSTEM_PROMPT and "Keep menu_item" in REFINE_PROMPT
+    assert (item.name, item.grams_likely) == ("white rice", 200)
+    assert not set(OLD_MENU_FIELDS) & set(item.model_dump())
+    assert "menu_item" not in SYSTEM_PROMPT and "menu_item" not in REFINE_PROMPT
 
 
-def test_context_prompt_names_the_date_and_lists_the_menu():
+def test_context_prompt_names_the_date_the_place_and_usual_portions():
     context = MealContext(taken_at=datetime(2026, 11, 13, 12, 30), time_source="device", meal_slot="lunch")
     assert context_prompt(context, {}) == "Photo taken Fri 2026-11-13 12:30 local time (lunch)."
 
-    menu = [dish("Cheese Pizza", serving="1 Slice"), dish("Pad Thai", "dinner", "8 OZ"), dish("Water")]
-    prompt = context_prompt(context, {"white rice": 200}, menu, hall="Worcester Dining Commons")
-    lines = prompt.splitlines()
-    assert lines[0] == "Photo taken Fri 2026-11-13 12:30 local time (lunch)."
-    assert lines[1] == "This user's usual portions from past corrections: white rice: 200 g."
-    assert lines[2] == "Today's menu at Worcester Dining Commons, dishes for this meal first:"
-    assert lines[3:6] == [
-        "- Cheese Pizza (serving: 1 Slice)",
-        "- Pad Thai (serving: 8 OZ)",
-        "- Water (serving: unknown)",
+    place = Place(name="Antonio's", kind="fast_food", cuisine="pizza", chain=True)
+    prompt = context_prompt(context.model_copy(update={"place": place}), {"white rice": 200, "cola": 355})
+    assert prompt.splitlines() == [
+        "Photo taken Fri 2026-11-13 12:30 local time (lunch).",
+        "Taken at or near Antonio's (chain) (fast food, cuisine: pizza).",
+        "This user's usual portions from past corrections: white rice: 200 g; cola: 355 g.",
     ]
-    assert lines[6] == MENU_RULE
-    assert "Today's menu" not in context_prompt(context, {}, [], hall="Worcester Dining Commons")
-
-    many = [dish(f"Dish {n}") for n in range(MENU_NAMES + 20)]
-    assert context_prompt(context, {}, many, hall="Hall").count("\n- ") == MENU_NAMES
 
 
-def test_the_menu_rule_is_strict_not_eager():
-    """The model names a listed dish only when the photo shows that dish; a similar one is not it."""
-    for text in (SYSTEM_PROMPT, MENU_RULE):
-        assert "pho is not ramen" in text and "exactly as written" in text
-        assert "settle what the food is" not in text and "same kind" in text  # "a similar dish of the same kind"
-    assert (
-        "IS that\n  dish, judged from what you can see: its broth, noodles, protein, toppings and shape"
-        in SYSTEM_PROMPT
-    )
-    assert "menu_item\n  stays null and you name the food from what the photo shows" in SYSTEM_PROMPT
-    assert "When you set menu_item, name is the menu's dish name." in SYSTEM_PROMPT
-    # Two listed dishes that both fit: the one question asks which, with those two as the options.
+def test_the_question_is_rare_and_easy_to_answer():
+    """Rarely a question: mostly a drink the photo can't settle, sometimes an easy food question,
+    never how it was cooked; one sentence, a choice phrased for one tap."""
     flat = " ".join(SYSTEM_PROMPT.split())
-    assert '("Is this the Chicken Tikka Masala or the Butter Chicken?")' in flat
-    # The example names no dish a hall really serves next to noodle soups, so it can't prime a pick.
-    assert "Tantanmen" not in SYSTEM_PROMPT and "Pho or" not in SYSTEM_PROMPT
-    # Rarely a question: mostly a drink the photo can't settle, sometimes an easy food question,
-    # never how it was cooked; one sentence, a choice phrased for one tap.
     assert "usually null" in flat and "at a glance" in flat and "diet or regular soda" in flat
     assert "a beef or a black bean burger" in flat and "Never ask how it was cooked" in flat
     assert 'Phrase a choice as "<A> or <B>?"' in flat and "Ask it in one sentence." in flat
-    assert "only when the food in the photo is that dish" in MENU_RULE
-    assert "Otherwise leave menu_item and the servings null and name the food from the photo." in MENU_RULE
-
-
-def menu_item_field(schema):
-    return schema["$defs"]["FoodItem"]["properties"]["menu_item"]
-
-
-def test_menu_item_is_an_enum_of_the_listed_names():
-    names = ["Chicken Pho Broth (Fish)", "Pho Noodles", "Tantanmen Ramen Bar", "Pho Noodles"]
-    field = response_schema(names)["$defs"]["FoodItem"]["properties"]["menu_item"]
-    assert field["anyOf"] == [
-        {"type": "string", "enum": ["Chicken Pho Broth (Fish)", "Pho Noodles", "Tantanmen Ramen Bar"]},
-        {"type": "null"},
-    ]
-    plain = response_schema()["$defs"]["FoodItem"]["properties"]["menu_item"]
-    assert plain["anyOf"] == [{"type": "string"}, {"type": "null"}]
-    # The rest of the schema is the same either way.
-    with_enum = response_schema(names)
-    with_enum["$defs"]["FoodItem"]["properties"]["menu_item"] = plain
-    assert with_enum == response_schema()
-    # Too many names, or too long a list, go as the plain string; the pipeline checks the name.
-    # Gemini refuses a 400-name enum ("too much branching"): an undated photo's list goes plain.
-    assert ENUM_NAMES < MENU_NAMES
-    assert closed_set(["x"] * ENUM_NAMES) and not closed_set(["x"] * (ENUM_NAMES + 1)) and not closed_set([])
-    assert not closed_set(["x" * (ENUM_CHARS // 2 + 1)] * 2)
-    assert menu_item_field(response_schema(["x"] * (ENUM_NAMES + 1))) == plain
-
-
-def test_context_prompt_for_a_photo_without_a_date_names_the_days():
-    context = MealContext(taken_at=datetime(2026, 11, 14, 15, 33), time_source="device", meal_slot="lunch")
-    menu = [dish("Tantanmen Ramen Bar"), dish("Chicken Pho Broth (Fish)", "dinner", "12 OZL")]
-    window = (date(2026, 11, 10), date(2026, 11, 28))
-    lines = context_prompt(context, {}, menu, hall="Worcester", window=window).splitlines()
-    assert lines[1] == (
-        "The photo has no date, so these are dishes Worcester served from Tue Nov 10 to Sat Nov 28, "
-        "the likeliest first:"
-    )
-    assert lines[2:4] == ["- Tantanmen Ramen Bar (serving: unknown)", "- Chicken Pho Broth (Fish) (serving: 12 OZL)"]
-    assert lines[4] == MENU_RULE
 
 
 def test_bench_fingerprint_hashes_the_schema_as_sent():
@@ -179,10 +94,6 @@ VALID = json.dumps(
                 "grams_high": 170,
                 "box_2d": [100, 100, 900, 900],
                 "hidden_fat_likely": False,
-                "menu_item": None,
-                "servings_low": None,
-                "servings_likely": None,
-                "servings_high": None,
             }
         ],
         "scale_reference": "dinner plate",
@@ -228,7 +139,7 @@ def test_create_kwargs():
     assert kwargs["store"] is False
     assert kwargs["generation_config"] == {"thinking_level": "low"}
     assert kwargs["response_format"]["mime_type"] == "application/json"
-    assert "menu_item" in kwargs["response_format"]["schema"]["$defs"]["FoodItem"]["required"]
+    assert kwargs["response_format"]["schema"] == response_schema()
     assert "cut off by the edge" in kwargs["system_instruction"] and "one sentence" in kwargs["system_instruction"]
     text, image = kwargs["input"]
     assert text["type"] == "text" and text["text"].startswith("Photo taken Fri 2026-11-13 12:30")
@@ -278,42 +189,13 @@ def test_sdk_exception_is_a_vision_error():
     assert len(fake.calls) == 1
 
 
-def test_the_listed_names_go_as_the_enum_and_a_refused_enum_falls_back_once():
-    names = ["Chicken Pho Broth (Fish)", "Tantanmen Ramen Bar"]
-    vision, fake = vision_with(reply(VALID))
-    vision.analyze(b"jpeg", "ctx", names)
-    menu_item = fake.calls[0]["response_format"]["schema"]["$defs"]["FoodItem"]["properties"]["menu_item"]
-    assert menu_item["anyOf"][0]["enum"] == names
-
+def test_a_refused_request_is_final():
     refused = RuntimeError("400 INVALID_ARGUMENT: schema too complex")
     refused.status_code = 400
-    vision, fake = vision_with(refused, reply(VALID), reply(VALID), reply(VALID))
-    assert vision.analyze(b"jpeg", "ctx", names).items[0].name == "cheese pizza"
-    first, second = (call["response_format"]["schema"] for call in fake.calls)
-    assert "enum" in menu_item_field(first)["anyOf"][0] and "enum" not in menu_item_field(second)["anyOf"][0]
-    # That size isn't sent as an enum again; a shorter list still is.
-    vision.analyze(b"jpeg", "ctx", names)
-    vision.analyze(b"jpeg", "ctx", names[:1])
-    third, fourth = (call["response_format"]["schema"] for call in fake.calls[2:])
-    assert "enum" not in menu_item_field(third)["anyOf"][0] and menu_item_field(fourth)["anyOf"][0]["enum"] == names[:1]
-
-    # A 400 the plain field fails too (a bad key, say) isn't about the enum: the limit stays.
-    bad_key = RuntimeError("400 INVALID_ARGUMENT: API key not valid")
-    bad_key.status_code = 400
-    vision, fake = vision_with(bad_key, bad_key, reply(VALID))
-    with pytest.raises(VisionError, match="API key"):
-        vision.analyze(b"jpeg", "ctx", names)
-    vision.analyze(b"jpeg", "ctx", names)
-    assert menu_item_field(fake.calls[2]["response_format"]["schema"])["anyOf"][0]["enum"] == names
-
-    vision, fake = vision_with(refused)  # without the enum a 400 is final, as before
+    vision, fake = vision_with(refused, reply(VALID))
     with pytest.raises(VisionError, match="INVALID_ARGUMENT"):
         vision.analyze(b"jpeg", "ctx")
     assert len(fake.calls) == 1
-
-    vision, fake = vision_with(reply(VALID))
-    vision.refine(MealAnalysis.model_validate_json(VALID), "Pho or ramen?", "pho", names)
-    assert menu_item_field(fake.calls[0]["response_format"]["schema"])["anyOf"][0]["enum"] == names
 
 
 def test_refine_sends_text_only():
@@ -325,16 +207,9 @@ def test_refine_sends_text_only():
     assert part["type"] == "text"
     assert analysis.model_dump_json() in part["text"] and "two" in part["text"]
     assert kwargs["timeout"] == 60.0
+    assert kwargs["response_format"]["schema"] == response_schema()
 
 
 def test_prompts_carry_the_benchmark_fixes():
     assert "never add a second entry" in REFINE_PROMPT
     assert "edge of the photo" in SYSTEM_PROMPT and "one sentence" in SYSTEM_PROMPT
-
-
-def test_context_prompt_says_when_no_menu_is_posted():
-    context = MealContext(taken_at=datetime(2026, 10, 7, 12, 32), time_source="exif", meal_slot="lunch")
-    past = [dish("Chicken Tikka Masala Rasoi", "any", "4 oz"), dish("Berkshire Burger", "any")]
-    lines = context_prompt(context, {}, past, hall="Berkshire").splitlines()
-    assert lines[1] == "Dishes Berkshire has served (no menu is posted for this day), most common first:"
-    assert lines[2] == "- Chicken Tikka Masala Rasoi (serving: 4 oz)"

@@ -4,7 +4,7 @@
 // [data-install] buttons stay hidden until one of those can work, and never show once the app runs
 // from the Home Screen. ?install=1 (the landing page's button) opens the sheet on load on phones.
 // The sheet is a <dialog> opened with showModal(), like the app's other sheets: it sits above them
-// (the account sheet included), the page behind it is inert, Escape closes it, and focus goes back
+// (Settings included), the page behind it is inert, Escape closes it, and focus goes back
 // to the button that opened it.
 (function () {
   var d = document, w = window;
